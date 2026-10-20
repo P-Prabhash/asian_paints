@@ -1,0 +1,36 @@
+{
+  "name": "paint-shop-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Paint Shop and Sunnam Bags management backend API",
+  "main": "src/server.js",
+  "scripts": {
+    "prestart": "node database/migrate.js",
+    "start": "node src/server.js",
+    "predev": "node database/migrate.js",
+    "dev": "nodemon src/server.js",
+    "migrate": "node database/migrate.js",
+    "seed": "node database/seed.js",
+    "test": "jest --runInBand --forceExit",
+    "test:integration": "jest --runInBand --forceExit --testPathPattern=integration",
+    "package:zip": "node scripts/package-backend.js"
+  },
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^18.0.8",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
+    "mysql2": "^3.24.6",
+    "swagger-ui-express": "^5.0.1",
+    "yamljs": "^0.3.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "jest": "^30.5.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.3.1"
+  }
+}

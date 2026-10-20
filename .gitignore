@@ -1,0 +1,24 @@
+# Node dependencies
+node_modules/
+
+# Local Environment Variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Database Backups & Temporary Dumps (except database_asian_paints.sql if needed)
+backups/
+*.log
+npm-debug.log*
+
+# Release Zips & Archives
+*.zip
+release/
+
+# IDE & OS Files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,144 @@
+const { pool } = require("../config/database");
+
+class SaleRepository {
+    static async listSales({ search, startDate, endDate, customerId, paymentStatus, limit = 50, offset = 0 } = {}) {
+        let where = ["1=1"];
+        const params = [];
+
+        if (search) {
+            where.push("(s.`invoice_no` LIKE ? OR c.`name` LIKE ? OR c.`mobile` LIKE ?)");
+            const str = `%${search}%`;
+            params.push(str, str, str);
+        }
+
+        if (startDate) {
+            where.push("s.`created_at` >= ?");
+            params.push(`${startDate} 00:00:00`);
+        }
+
+        if (endDate) {
+            where.push("s.`created_at` <= ?");
+            params.push(`${endDate} 23:59:59`);
+        }
+
+        if (customerId) {
+            where.push("s.`customer_id` = ?");
+            params.push(customerId);
+        }
+
+        if (paymentStatus) {
+            where.push("s.`payment_status` = ?");
+            params.push(paymentStatus);
+        }
+
+        const query = `
+            SELECT s.*, c.\`name\` as customer_name, c.\`mobile\` as customer_mobile, u.\`name\` as creator_name
+            FROM \`sales\` s
+            LEFT JOIN \`customers\` c ON s.\`customer_id\` = c.\`id\`
+            JOIN \`users\` u ON s.\`created_by\` = u.\`id\`
+            WHERE ${where.join(" AND ")}
+            ORDER BY s.\`id\` DESC
+            LIMIT ? OFFSET ?
+        `;
+
+        const countQuery = `
+            SELECT COUNT(*) as total
+            FROM \`sales\` s
+            LEFT JOIN \`customers\` c ON s.\`customer_id\` = c.\`id\`
+            WHERE ${where.join(" AND ")}
+        `;
+
+        const [rows] = await pool.query(query, [...params, limit, offset]);
+        const [countRows] = await pool.query(countQuery, params);
+
+        return { sales: rows, total: countRows[0].total };
+    }
+
+    static async findById(id) {
+        const query = `
+            SELECT s.*, c.\`name\` as customer_name, c.\`mobile\` as customer_mobile, c.\`address\` as customer_address, c.\`gstin\` as customer_gstin, u.\`name\` as creator_name
+            FROM \`sales\` s
+            LEFT JOIN \`customers\` c ON s.\`customer_id\` = c.\`id\`
+            JOIN \`users\` u ON s.\`created_by\` = u.\`id\`
+            WHERE s.\`id\` = ?
+            LIMIT 1
+        `;
+        const [rows] = await pool.query(query, [id]);
+        if (rows.length === 0) return null;
+
+        const sale = rows[0];
+
+        const itemsQuery = "SELECT * FROM `sale_items` WHERE `sale_id` = ?";
+        const [items] = await pool.query(itemsQuery, [id]);
+        sale.items = items;
+
+        const paymentsQuery = "SELECT * FROM `payments` WHERE `sale_id` = ?";
+        const [payments] = await pool.query(paymentsQuery, [id]);
+        sale.payments = payments;
+
+        const returnsQuery = "SELECT * FROM `sale_returns` WHERE `sale_id` = ?";
+        const [returns] = await pool.query(returnsQuery, [id]);
+        sale.returns = returns;
+
+        return sale;
+    }
+
+    static async createSale(saleData, conn) {
+        const {
+            invoiceNo, customerId, categoryFilter, subtotal, discountTotal, taxableTotal,
+            cgstTotal, sgstTotal, igstTotal, roundOff, grandTotal, paidTotal, dueTotal,
+            paymentStatus, status, createdBy
+        } = saleData;
+
+        const [result] = await conn.query(
+            `INSERT INTO \`sales\`
+            (\`invoice_no\`, \`customer_id\`, \`category_filter\`, \`subtotal\`, \`discount_total\`, \`taxable_total\`,
+             \`cgst_total\`, \`sgst_total\`, \`igst_total\`, \`round_off\`, \`grand_total\`, \`paid_total\`, \`due_total\`,
+             \`payment_status\`, \`status\`, \`created_by\`)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                invoiceNo, customerId || null, categoryFilter || "ALL", subtotal, discountTotal, taxableTotal,
+                cgstTotal, sgstTotal, igstTotal, roundOff, grandTotal, paidTotal, dueTotal,
+                paymentStatus, status || "COMPLETED", createdBy
+            ]
+        );
+        return result.insertId;
+    }
+
+    static async createSaleItem(itemData, conn) {
+        const {
+            saleId, productId, productNameSnapshot, skuSnapshot, hsnSnapshot, unitSnapshot,
+            qty, unitPrice, discount, taxRateSnapshot, taxableValue, taxAmount, lineTotal
+        } = itemData;
+
+        await conn.query(
+            `INSERT INTO \`sale_items\`
+            (\`sale_id\`, \`product_id\`, \`product_name_snapshot\`, \`sku_snapshot\`, \`hsn_snapshot\`, \`unit_snapshot\`,
+             \`qty\`, \`unit_price\`, \`discount\`, \`tax_rate_snapshot\`, \`taxable_value\`, \`tax_amount\`, \`line_total\`)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                saleId, productId, productNameSnapshot, skuSnapshot, hsnSnapshot || null, unitSnapshot,
+                qty, unitPrice, discount, taxRateSnapshot, taxableValue, taxAmount, lineTotal
+            ]
+        );
+    }
+
+    static async createSaleReturn({ saleId, returnNo, totalRefund, reason, createdBy }, conn) {
+        const [result] = await conn.query(
+            `INSERT INTO \`sale_returns\` (\`sale_id\`, \`return_no\`, \`total_refund\`, \`reason\`, \`created_by\`)
+             VALUES (?, ?, ?, ?, ?)`,
+            [saleId, returnNo, totalRefund, reason, createdBy]
+        );
+        return result.insertId;
+    }
+
+    static async createSaleReturnItem({ returnId, productId, qty, refundAmount, lineTotal }, conn) {
+        await conn.query(
+            `INSERT INTO \`sale_return_items\` (\`return_id\`, \`product_id\`, \`qty\`, \`refund_amount\`, \`line_total\`)
+             VALUES (?, ?, ?, ?, ?)`,
+            [returnId, productId, qty, refundAmount, lineTotal]
+        );
+    }
+}
+
+module.exports = SaleRepository;
