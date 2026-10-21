@@ -39,18 +39,19 @@ if (env.swaggerEnabled) {
     try {
         const swaggerDocument = yaml.load(openapiPath);
 
-        // Explicit JSON endpoint for Swagger UI specification fetching
-        app.get("/api-docs/swagger.json", (req, res) => {
+        const serveSwaggerDocument = (req, res) => {
             res.json(swaggerDocument);
-        });
+        };
+        app.get(["/api-docs/swagger.json", "/docs/swagger.json"], serveSwaggerDocument);
 
-        app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
+        const swaggerUiHandler = swaggerUi.setup(swaggerDocument, {
             swaggerOptions: {
                 url: "/api-docs/swagger.json"
             }
-        }));
+        });
+        app.use(["/api-docs", "/docs"], swaggerUi.serve, swaggerUiHandler);
 
-        console.log("Swagger UI successfully configured at http://localhost:" + env.port + "/api-docs");
+        console.log("Swagger UI successfully configured at http://localhost:" + env.port + "/docs");
     } catch (err) {
         console.warn("Swagger UI failed to load openapi.yaml:", err.message);
     }

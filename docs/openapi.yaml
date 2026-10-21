@@ -4,8 +4,8 @@ info:
   description: Complete RESTful API contract for Paint Shop POS, Billing, Products, Customers, Inventory, Purchases, Reports, and System Administration.
   version: 1.0.0
 servers:
-  - url: http://localhost:5000/api/v1
-    description: Local Development Server
+  - url: https://asian-paints-buf0.onrender.com/api/v1
+    description: Production Server
 paths:
   /health/live:
     get:
