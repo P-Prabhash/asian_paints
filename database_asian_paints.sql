@@ -142,6 +142,7 @@ CREATE TABLE `products` (
     `purchase_price` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     `sale_price` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     `reorder_level` DECIMAL(12, 2) NOT NULL DEFAULT 10.00,
+    `stock_alert_description` VARCHAR(255) DEFAULT NULL,
     `stock_qty` DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
     `active` TINYINT(1) NOT NULL DEFAULT 1,
     `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

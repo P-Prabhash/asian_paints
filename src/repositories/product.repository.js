@@ -60,16 +60,18 @@ class ProductRepository {
     static async createProduct(productData) {
         const {
             sku, barcode, name, categoryId, brand, size, shade, hsnCode,
-            unitId, gstRateId, purchasePrice, salePrice, reorderLevel, stockQty, active
+            unitId, gstRateId, purchasePrice, salePrice, reorderLevel,
+            stockAlertDescription, stockQty, active
         } = productData;
 
         const [result] = await pool.query(
             `INSERT INTO \`products\`
-            (\`sku\`, \`barcode\`, \`name\`, \`category_id\`, \`brand\`, \`size\`, \`shade\`, \`hsn_code\`, \`unit_id\`, \`gst_rate_id\`, \`purchase_price\`, \`sale_price\`, \`reorder_level\`, \`stock_qty\`, \`active\`)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            (\`sku\`, \`barcode\`, \`name\`, \`category_id\`, \`brand\`, \`size\`, \`shade\`, \`hsn_code\`, \`unit_id\`, \`gst_rate_id\`, \`purchase_price\`, \`sale_price\`, \`reorder_level\`, \`stock_alert_description\`, \`stock_qty\`, \`active\`)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 sku, barcode || null, name, categoryId, brand || null, size || null, shade || null,
-                hsnCode || null, unitId, gstRateId, purchasePrice, salePrice, reorderLevel || 10, stockQty || 0, active ? 1 : 0
+                hsnCode || null, unitId, gstRateId, purchasePrice, salePrice,
+                reorderLevel ?? 10, stockAlertDescription ?? null, stockQty ?? 0, active ? 1 : 0
             ]
         );
         return result.insertId;
@@ -93,6 +95,7 @@ class ProductRepository {
             purchasePrice: "`purchase_price` = ?",
             salePrice: "`sale_price` = ?",
             reorderLevel: "`reorder_level` = ?",
+            stockAlertDescription: "`stock_alert_description` = ?",
             stockQty: "`stock_qty` = ?",
             active: "`active` = ?"
         };

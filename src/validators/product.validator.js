@@ -14,11 +14,16 @@ const createProductSchema = z.object({
     purchasePrice: z.number().min(0, "Purchase price cannot be negative"),
     salePrice: z.number().min(0, "Sale price cannot be negative"),
     reorderLevel: z.number().min(0).optional().default(10),
+    stockAlertDescription: z.string().max(255).optional().nullable(),
     stockQty: z.number().optional().default(0),
     active: z.boolean().optional().default(true)
 });
 
-const updateProductSchema = createProductSchema.partial();
+const updateProductSchema = createProductSchema.extend({
+    reorderLevel: z.number().min(0).optional(),
+    stockQty: z.number().optional(),
+    active: z.boolean().optional()
+}).partial();
 
 const productLookupQuerySchema = z.object({
     code: z.string().min(1, "Search code or barcode is required")
