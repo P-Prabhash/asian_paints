@@ -1,5 +1,5 @@
 const AppError = require("../utils/app-error");
-const { withTransaction } = require("../config/database");
+const withTransaction = require("../utils/transaction");
 const ProductRepository = require("../repositories/product.repository");
 const CustomerRepository = require("../repositories/customer.repository");
 const SaleRepository = require("../repositories/sale.repository");
@@ -74,11 +74,12 @@ class BillingService {
                 throw new AppError("At least one payment method is required", 400, "MISSING_PAYMENT");
             }
 
-            const productIds = items.map(i => i.productId);
+            const productIds = [...new Set(items.map(i => i.productId))];
             const lockedProducts = await ProductRepository.findByIdsForUpdate(productIds, conn);
             const productMap = new Map(lockedProducts.map(p => [p.id, p]));
 
             const itemsToCalculate = [];
+            const requestedQtyByProduct = new Map();
             for (const item of items) {
                 const product = productMap.get(item.productId);
                 if (!product) {
@@ -89,8 +90,10 @@ class BillingService {
                     throw new AppError(`Product '${product.name}' is inactive`, 400, "INACTIVE_PRODUCT");
                 }
 
-                if (product.stock_qty < item.qty) {
-                    throw new AppError(`Insufficient stock for product '${product.name}'. Available: ${product.stock_qty}, Requested: ${item.qty}`, 400, "INSUFFICIENT_STOCK");
+                const requestedQty = (requestedQtyByProduct.get(product.id) || 0) + item.qty;
+                requestedQtyByProduct.set(product.id, requestedQty);
+                if (product.stock_qty < requestedQty) {
+                    throw new AppError(`Insufficient stock for product '${product.name}'. Available: ${product.stock_qty}, Requested: ${requestedQty}`, 400, "INSUFFICIENT_STOCK");
                 }
 
                 itemsToCalculate.push({
@@ -133,8 +136,8 @@ class BillingService {
             let customerObj = null;
 
             if (dueTotal > 0) {
-                if (!customerInput || (!customerInput.id && !customerInput.name && !customerInput.mobile)) {
-                    throw new AppError("Customer name, mobile, and address are mandatory for credit sales", 400, "CREDIT_CUSTOMER_REQUIRED");
+                if (!customerInput || (!customerInput.id && !customerInput.name?.trim())) {
+                    throw new AppError("A customer ID or customer name is required for credit sales", 400, "CREDIT_CUSTOMER_REQUIRED");
                 }
             }
 
@@ -180,6 +183,10 @@ class BillingService {
                 createdBy: actorId
             }, conn);
 
+            const remainingStockByProduct = new Map(lockedProducts.map(product => [
+                product.id,
+                Number(product.stock_qty)
+            ]));
             for (const item of calculatedTotals.items) {
                 await SaleRepository.createSaleItem({
                     saleId,
@@ -197,7 +204,8 @@ class BillingService {
                     lineTotal: item.lineTotal
                 }, conn);
 
-                const newStock = roundToTwoDecimals(item.currentStock - item.qty);
+                const newStock = roundToTwoDecimals(remainingStockByProduct.get(item.productId) - item.qty);
+                remainingStockByProduct.set(item.productId, newStock);
                 await ProductRepository.updateStockQty(item.productId, newStock, conn);
 
                 await StockRepository.addMovement({

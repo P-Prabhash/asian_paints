@@ -54,33 +54,47 @@ class SaleRepository {
         return { sales: rows, total: countRows[0].total };
     }
 
-    static async findById(id) {
+    static async findById(id, conn = pool, lock = false) {
         const query = `
             SELECT s.*, c.\`name\` as customer_name, c.\`mobile\` as customer_mobile, c.\`address\` as customer_address, c.\`gstin\` as customer_gstin, u.\`name\` as creator_name
             FROM \`sales\` s
             LEFT JOIN \`customers\` c ON s.\`customer_id\` = c.\`id\`
             JOIN \`users\` u ON s.\`created_by\` = u.\`id\`
             WHERE s.\`id\` = ?
-            LIMIT 1
+            LIMIT 1${lock ? " FOR UPDATE" : ""}
         `;
-        const [rows] = await pool.query(query, [id]);
+        const [rows] = await conn.query(query, [id]);
         if (rows.length === 0) return null;
 
         const sale = rows[0];
 
         const itemsQuery = "SELECT * FROM `sale_items` WHERE `sale_id` = ?";
-        const [items] = await pool.query(itemsQuery, [id]);
+        const [items] = await conn.query(itemsQuery, [id]);
         sale.items = items;
 
         const paymentsQuery = "SELECT * FROM `payments` WHERE `sale_id` = ?";
-        const [payments] = await pool.query(paymentsQuery, [id]);
+        const [payments] = await conn.query(paymentsQuery, [id]);
         sale.payments = payments;
 
         const returnsQuery = "SELECT * FROM `sale_returns` WHERE `sale_id` = ?";
-        const [returns] = await pool.query(returnsQuery, [id]);
+        const [returns] = await conn.query(returnsQuery, [id]);
         sale.returns = returns;
 
         return sale;
+    }
+
+    static async getReturnedQuantitiesBySaleId(saleId, conn = pool) {
+        const [rows] = await conn.query(
+            `SELECT sri.\`product_id\`,
+                    SUM(sri.\`qty\`) AS returned_qty,
+                    SUM(sri.\`refund_amount\`) AS refunded_amount
+             FROM \`sale_return_items\` sri
+             JOIN \`sale_returns\` sr ON sr.\`id\` = sri.\`return_id\`
+             WHERE sr.\`sale_id\` = ?
+             GROUP BY sri.\`product_id\``,
+            [saleId]
+        );
+        return rows;
     }
 
     static async createSale(saleData, conn) {

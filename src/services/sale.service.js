@@ -1,5 +1,5 @@
 const AppError = require("../utils/app-error");
-const { withTransaction } = require("../config/database");
+const withTransaction = require("../utils/transaction");
 const SaleRepository = require("../repositories/sale.repository");
 const ProductRepository = require("../repositories/product.repository");
 const StockRepository = require("../repositories/stock.repository");
@@ -21,7 +21,7 @@ class SaleService {
 
     static async processReturn(saleId, returnData, actorId) {
         return withTransaction(async (conn) => {
-            const sale = await SaleRepository.findById(saleId);
+            const sale = await SaleRepository.findById(saleId, conn, true);
             if (!sale) throw new AppError("Invoice not found", 404, "SALE_NOT_FOUND");
 
             if (sale.status === "VOID") {
@@ -30,9 +30,29 @@ class SaleService {
 
             const { reason, items } = returnData;
 
-            const returnNo = await getNextSequenceNumber(conn, "return_next_number", "RET-");
-
-            const saleItemMap = new Map(sale.items.map(i => [i.product_id, i]));
+            const saleItemMap = new Map();
+            for (const item of sale.items) {
+                const existing = saleItemMap.get(item.product_id);
+                if (existing) {
+                    existing.qty += Number(item.qty);
+                    existing.line_total += Number(item.line_total);
+                } else {
+                    saleItemMap.set(item.product_id, {
+                        ...item,
+                        qty: Number(item.qty),
+                        line_total: Number(item.line_total)
+                    });
+                }
+            }
+            const returnedByProduct = new Map(
+                (await SaleRepository.getReturnedQuantitiesBySaleId(saleId, conn))
+                    .map(item => [item.product_id, {
+                        qty: Number(item.returned_qty),
+                        refundAmount: Number(item.refunded_amount)
+                    }])
+            );
+            const requestedQtyByProduct = new Map();
+            const requestedRefundByProduct = new Map();
 
             let totalRefund = 0;
             const processedReturnItems = [];
@@ -43,12 +63,21 @@ class SaleService {
                     throw new AppError(`Product ID ${item.productId} was not part of this invoice`, 400, "PRODUCT_NOT_IN_SALE");
                 }
 
-                if (item.qty > saleItem.qty) {
-                    throw new AppError(`Return quantity (${item.qty}) exceeds purchased quantity (${saleItem.qty}) for product '${saleItem.product_name_snapshot}'`, 400, "INVALID_RETURN_QTY");
+                const priorReturns = returnedByProduct.get(item.productId) || { qty: 0, refundAmount: 0 };
+                const requestedQty = (requestedQtyByProduct.get(item.productId) || 0) + item.qty;
+                requestedQtyByProduct.set(item.productId, requestedQty);
+                const cumulativeReturnedQty = priorReturns.qty + requestedQty;
+                if (cumulativeReturnedQty > saleItem.qty) {
+                    throw new AppError(`Return quantity (${cumulativeReturnedQty}) exceeds purchased quantity (${saleItem.qty}) for product '${saleItem.product_name_snapshot}'`, 400, "INVALID_RETURN_QTY");
                 }
 
-                const lineRefund = roundToTwoDecimals((saleItem.line_total / saleItem.qty) * item.qty);
-                totalRefund += lineRefund;
+                const targetRefund = cumulativeReturnedQty === saleItem.qty
+                    ? saleItem.line_total
+                    : roundToTwoDecimals((saleItem.line_total / saleItem.qty) * cumulativeReturnedQty);
+                const requestedRefund = requestedRefundByProduct.get(item.productId) || 0;
+                const lineRefund = roundToTwoDecimals(targetRefund - priorReturns.refundAmount - requestedRefund);
+                requestedRefundByProduct.set(item.productId, roundToTwoDecimals(requestedRefund + lineRefund));
+                totalRefund = roundToTwoDecimals(totalRefund + lineRefund);
 
                 processedReturnItems.push({
                     productId: item.productId,
@@ -59,6 +88,7 @@ class SaleService {
             }
 
             totalRefund = roundToTwoDecimals(totalRefund);
+            const returnNo = await getNextSequenceNumber(conn, "return_next_number", "RET-");
 
             const returnId = await SaleRepository.createSaleReturn({
                 saleId,

@@ -20,7 +20,7 @@ const quoteSchema = z.object({
 
 const customerInfoSchema = z.object({
     id: z.number().int().positive().optional().nullable(),
-    name: z.string().optional().nullable(),
+    name: z.string().trim().min(2).optional().nullable(),
     mobile: z.string().optional().nullable(),
     address: z.string().optional().nullable(),
     gstin: z.string().optional().nullable()

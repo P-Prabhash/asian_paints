@@ -2,7 +2,8 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const swaggerUi = require("swagger-ui-express");
-const yaml = require("yamljs");
+const yaml = require("yaml");
+const fs = require("fs");
 const path = require("path");
 
 const env = require("./config/env");
@@ -37,7 +38,7 @@ app.use(httpLogger);
 if (env.swaggerEnabled) {
     const openapiPath = path.join(__dirname, "..", "docs", "openapi.yaml");
     try {
-        const swaggerDocument = yaml.load(openapiPath);
+        const swaggerDocument = yaml.parse(fs.readFileSync(openapiPath, "utf8"));
 
         const serveSwaggerDocument = (req, res) => {
             res.json(swaggerDocument);
