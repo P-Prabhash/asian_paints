@@ -1,4 +1,5 @@
 const SaleService = require("../services/sale.service");
+const { renderThermalReceipt } = require("../utils/thermal-receipt");
 
 async function listSales(req, res) {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
@@ -11,6 +12,7 @@ async function listSales(req, res) {
         endDate: req.query.endDate,
         customerId: req.query.customerId ? parseInt(req.query.customerId, 10) : undefined,
         paymentStatus: req.query.paymentStatus,
+        categoryFilter: req.query.categoryFilter,
         limit,
         offset
     });
@@ -34,6 +36,13 @@ async function getSale(req, res) {
     });
 }
 
+async function getSaleReceipt(req, res) {
+    const { sale, settings } = await SaleService.getReceiptData(parseInt(req.params.id, 10));
+    res.status(200)
+        .type("html")
+        .send(renderThermalReceipt(sale, settings));
+}
+
 async function createReturn(req, res) {
     const returnResult = await SaleService.processReturn(parseInt(req.params.id, 10), req.body, req.user.id);
     res.status(201).json({
@@ -46,5 +55,6 @@ async function createReturn(req, res) {
 module.exports = {
     listSales,
     getSale,
+    getSaleReceipt,
     createReturn
 };

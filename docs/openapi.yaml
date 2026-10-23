@@ -185,44 +185,172 @@ paths:
         '404': { description: Product not found }
         '409': { description: SKU or barcode already exists }
 
+  /billing/products:
+    get:
+      summary: List active products available for POS billing
+      description: Paginated catalog for the sales screen. Filter by Paint or Sunnam; use pagination to display the full matching catalog. Prices include calculated GST in salePriceIncludingGst.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: categoryFilter
+          schema: { type: string, enum: [ALL, PAINT, SUNNAM], default: ALL }
+          description: Paint and Sunnam catalog filters; ALL returns all active products.
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: POS product page with tax-inclusive display prices
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingProductListResponse'
+
   /billing/quote:
     post:
-      summary: Calculate invoice totals and GST breakdown without persisting
+      summary: Calculate GST-inclusive invoice totals without persisting
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingQuoteRequest'
       responses:
-        '200': { description: Quote calculation preview }
+        '200':
+          description: GST breakdown and inclusive line and invoice totals
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingQuoteResponse'
+        '400': { description: Invalid cart, inactive product, or mixed-category invoice }
 
   /billing/checkout:
     post:
-      summary: Process checkout, allocate invoice, deduct stock, record payments
+      summary: Process category-specific checkout, allocate invoice, deduct stock, and record payments
       security: [{ bearerAuth: [] }]
       parameters:
         - in: header
           name: Idempotency-Key
           schema: { type: string }
+          description: Optional key to safely retry the same checkout.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillingCheckoutRequest'
       responses:
-        '201': { description: Invoice created }
+        '201':
+          description: Invoice created; Paint and Sunnam invoices use separate PNT and SUN sequences.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillingCheckoutResponse'
+        '400': { description: Invalid cart, mixed categories, insufficient stock, or payment mismatch }
 
   /sales:
     get:
-      summary: List sales invoices
+      summary: List sales invoices, including Paint and Sunnam invoices
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: startDate
+          schema: { type: string, format: date }
+        - in: query
+          name: endDate
+          schema: { type: string, format: date }
+        - in: query
+          name: customerId
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: paymentStatus
+          schema: { type: string, enum: [PAID, PARTIAL, UNPAID] }
+        - in: query
+          name: categoryFilter
+          schema: { type: string, enum: [PAINT, SUNNAM] }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
-        '200': { description: Sales invoices list }
+        '200':
+          description: Paginated invoice summaries with persisted GST totals and category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalesListResponse'
 
   /sales/{id}:
     get:
       summary: Get sale invoice details
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
       responses:
-        '200': { description: Invoice details }
+        '200':
+          description: Invoice with product snapshots, GST details, payments, and returns
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleResponse'
+        '404': { description: Invoice not found }
+
+  /sales/{id}/receipt:
+    get:
+      summary: Get an 80mm thermal-printer invoice
+      description: Returns print-ready HTML sized for an 80mm thermal receipt printer. Open the response in a browser and choose Print.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Print-ready 80mm invoice receipt
+          content:
+            text/html:
+              schema: { type: string }
+        '404': { description: Invoice not found }
 
   /sales/{id}/returns:
     post:
       summary: Process sales return and stock reversal
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SaleReturnRequest'
       responses:
-        '201': { description: Return processed }
+        '201':
+          description: Return recorded with stock and customer balance updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleReturnResponse'
+        '400': { description: Invalid return or quantity exceeds amount sold }
 
   /customers:
     get:
@@ -442,6 +570,270 @@ components:
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    BillingProductListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, example: 12 }
+              sku: { type: string, example: PAINT-001 }
+              barcode: { type: string, nullable: true }
+              name: { type: string, example: "Interior Paint" }
+              category_id: { type: integer, example: 1 }
+              category_name: { type: string, example: Paint }
+              salesCategory: { type: string, enum: [PAINT, SUNNAM, BAGS, TOOLS_ACCESSORIES] }
+              brand: { type: string, nullable: true }
+              size: { type: string, nullable: true }
+              shade: { type: string, nullable: true }
+              hsn_code: { type: string, nullable: true }
+              unit_code: { type: string, example: LTR }
+              unit_name: { type: string, example: Litre }
+              gst_rate: { type: number, example: 18 }
+              stock_qty: { type: string, example: "12.00" }
+              sale_price: { type: string, description: "Tax-exclusive selling price stored for tax calculation", example: "100.00" }
+              salePriceIncludingGst: { type: number, description: "Display unit price inclusive of GST", example: 118 }
+              active: { type: integer, enum: [0, 1] }
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    BillingQuoteRequest:
+      type: object
+      required: [items]
+      properties:
+        categoryFilter: { type: string, enum: [ALL, PAINT, SUNNAM], default: ALL }
+        isInterState: { type: boolean, default: false }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, qty]
+            properties:
+              productId: { type: integer, minimum: 1, example: 12 }
+              qty: { type: number, minimum: 0, exclusiveMinimum: true, example: 2 }
+              discount: { type: number, minimum: 0, default: 0, example: 0 }
+    BillingQuoteResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            categoryFilter: { type: string, example: PAINT }
+            isInterState: { type: boolean, example: false }
+            pricesIncludeGst: { type: boolean, example: true }
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  productId: { type: integer }
+                  name: { type: string }
+                  sku: { type: string }
+                  qty: { type: number }
+                  unitPrice: { type: number, description: "Stored tax-exclusive unit price" }
+                  unitPriceInclusive: { type: number, description: "Unit display price including GST" }
+                  discount: { type: number }
+                  taxableValue: { type: number }
+                  gstRate: { type: number }
+                  totalTax: { type: number }
+                  cgst: { type: number }
+                  sgst: { type: number }
+                  igst: { type: number }
+                  lineTotal: { type: number, description: "Line amount inclusive of GST and after discount" }
+            subtotal: { type: number }
+            discountTotal: { type: number }
+            taxableTotal: { type: number }
+            cgstTotal: { type: number }
+            sgstTotal: { type: number }
+            igstTotal: { type: number }
+            roundOff: { type: number }
+            grandTotal: { type: number, description: "Final amount payable, inclusive of GST" }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+    BillingCheckoutRequest:
+      allOf:
+        - $ref: '#/components/schemas/BillingQuoteRequest'
+        - type: object
+          required: [payments]
+          properties:
+            customer:
+              type: object
+              nullable: true
+              properties:
+                id: { type: integer, nullable: true }
+                name: { type: string, nullable: true }
+                mobile: { type: string, nullable: true }
+                address: { type: string, nullable: true }
+                gstin: { type: string, nullable: true }
+            payments:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [method, amount]
+                properties:
+                  method: { type: string, enum: [CASH, UPI, CARD, CREDIT] }
+                  amount: { type: number, minimum: 0 }
+                  referenceNo: { type: string, nullable: true }
+            idempotencyKey: { type: string, nullable: true }
+    BillingCheckoutResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            saleId: { type: integer, example: 501 }
+            invoiceNo: { type: string, example: PNT-1001 }
+            categoryFilter: { type: string, enum: [PAINT, SUNNAM], example: PAINT }
+            pricesIncludeGst: { type: boolean, example: true }
+            customerId: { type: integer, nullable: true }
+            customerName: { type: string, example: "Walk-in Customer" }
+            subtotal: { type: number }
+            discountTotal: { type: number }
+            taxableTotal: { type: number }
+            cgstTotal: { type: number }
+            sgstTotal: { type: number }
+            igstTotal: { type: number }
+            roundOff: { type: number }
+            grandTotal: { type: number, description: "Final invoice amount including GST" }
+            paidTotal: { type: number }
+            dueTotal: { type: number }
+            paymentStatus: { type: string, enum: [PAID, PARTIAL, UNPAID] }
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  productId: { type: integer }
+                  name: { type: string }
+                  qty: { type: number }
+                  unitPrice: { type: number, description: "Tax-exclusive stored unit price" }
+                  unitPriceInclusive: { type: number, description: "GST-inclusive unit display price" }
+                  totalTax: { type: number }
+                  lineTotal: { type: number, description: "GST-inclusive line total" }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+    SalesListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              invoice_no: { type: string, example: SUN-1001 }
+              category_filter: { type: string, example: SUNNAM }
+              customer_name: { type: string, nullable: true }
+              customer_mobile: { type: string, nullable: true }
+              subtotal: { type: string }
+              taxable_total: { type: string }
+              cgst_total: { type: string }
+              sgst_total: { type: string }
+              igst_total: { type: string }
+              grand_total: { type: string, description: "Final amount inclusive of GST" }
+              paid_total: { type: string }
+              due_total: { type: string }
+              payment_status: { type: string, enum: [PAID, PARTIAL, UNPAID] }
+              status: { type: string }
+              created_at: { type: string, format: date-time }
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    SaleResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            id: { type: integer }
+            invoice_no: { type: string }
+            category_filter: { type: string, example: PAINT }
+            customer_name: { type: string, nullable: true }
+            customer_mobile: { type: string, nullable: true }
+            subtotal: { type: string }
+            discount_total: { type: string }
+            taxable_total: { type: string }
+            cgst_total: { type: string }
+            sgst_total: { type: string }
+            igst_total: { type: string }
+            round_off: { type: string }
+            grand_total: { type: string, description: "Final amount inclusive of GST" }
+            paid_total: { type: string }
+            due_total: { type: string }
+            payment_status: { type: string }
+            status: { type: string }
+            items:
+              type: array
+              items:
+                type: object
+                properties:
+                  product_id: { type: integer }
+                  product_name_snapshot: { type: string }
+                  sku_snapshot: { type: string }
+                  hsn_snapshot: { type: string, nullable: true }
+                  unit_snapshot: { type: string }
+                  qty: { type: string }
+                  unit_price: { type: string, description: "Tax-exclusive unit price" }
+                  unit_price_inclusive: { type: number, description: "GST-inclusive unit display price" }
+                  discount: { type: string }
+                  tax_rate_snapshot: { type: string }
+                  taxable_value: { type: string }
+                  tax_amount: { type: string }
+                  line_total: { type: string, description: "GST-inclusive line total" }
+            payments:
+              type: array
+              items:
+                type: object
+                properties:
+                  method: { type: string }
+                  amount: { type: string }
+                  reference_no: { type: string, nullable: true }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+    SaleReturnRequest:
+      type: object
+      required: [reason, items]
+      properties:
+        reason: { type: string, minLength: 2, example: "Damaged goods" }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [productId, qty]
+            properties:
+              productId: { type: integer, minimum: 1 }
+              qty: { type: number, minimum: 0, exclusiveMinimum: true }
+    SaleReturnResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            returnId: { type: integer }
+            returnNo: { type: string }
+            invoiceNo: { type: string }
+            totalRefund: { type: number }
+            reason: { type: string }
+            items: { type: array, items: { type: object } }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
     StockAdjustmentRequest:
       type: object
       required: [productId, adjustmentType, quantity, reason]

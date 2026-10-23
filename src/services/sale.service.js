@@ -5,6 +5,7 @@ const ProductRepository = require("../repositories/product.repository");
 const StockRepository = require("../repositories/stock.repository");
 const CustomerRepository = require("../repositories/customer.repository");
 const AuditRepository = require("../repositories/audit.repository");
+const SettingsRepository = require("../repositories/settings.repository");
 const { getNextSequenceNumber } = require("../utils/invoice-number");
 const { roundToTwoDecimals } = require("../utils/money");
 
@@ -17,6 +18,14 @@ class SaleService {
         const sale = await SaleRepository.findById(id);
         if (!sale) throw new AppError("Invoice not found", 404, "SALE_NOT_FOUND");
         return sale;
+    }
+
+    static async getReceiptData(id) {
+        const [sale, settings] = await Promise.all([
+            this.getSaleById(id),
+            SettingsRepository.getAllSettings()
+        ]);
+        return { sale, settings };
     }
 
     static async processReturn(saleId, returnData, actorId) {

@@ -123,6 +123,11 @@ class ApiClient {
         return this.request(`/products/lookup?code=${encodeURIComponent(code)}`);
     }
 
+    static async getBillingProducts(params = {}) {
+        const query = new URLSearchParams(params).toString();
+        return this.request(`/billing/products${query ? '?' + query : ''}`);
+    }
+
     static async getBillingQuote(cartData) {
         return this.request('/billing/quote', {
             method: 'POST',
@@ -140,6 +145,33 @@ class ApiClient {
             headers,
             body: checkoutPayload
         });
+    }
+
+    // Sales history and 80mm invoice printing
+    static async getSales(params = {}) {
+        const query = new URLSearchParams(params).toString();
+        return this.request(`/sales${query ? '?' + query : ''}`);
+    }
+
+    static async getSale(saleId) {
+        return this.request(`/sales/${saleId}`);
+    }
+
+    static async getSaleReceiptHtml(saleId) {
+        const response = await fetch(`${API_CONFIG.baseURL}/sales/${saleId}/receipt`, {
+            headers: {
+                'Accept': 'text/html',
+                'Authorization': `Bearer ${this.getToken()}`
+            }
+        });
+
+        if (!response.ok) {
+            const error = new Error(`Unable to load invoice receipt (HTTP ${response.status})`);
+            error.status = response.status;
+            throw error;
+        }
+
+        return response.text();
     }
 
     // Products & Stock

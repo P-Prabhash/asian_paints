@@ -13,6 +13,7 @@ function calculateLineItemTax({ unitPrice, qty, discount = 0, gstRate = 0, isInt
     const taxableValue = Math.max(0, roundToTwoDecimals(grossSubtotal - disc));
 
     const totalTax = roundToTwoDecimals((taxableValue * rate) / 100);
+    const unitPriceInclusive = roundToTwoDecimals(price * (1 + rate / 100));
 
     let cgst = 0;
     let sgst = 0;
@@ -29,6 +30,7 @@ function calculateLineItemTax({ unitPrice, qty, discount = 0, gstRate = 0, isInt
 
     return {
         grossSubtotal,
+        unitPriceInclusive,
         discount: disc,
         taxableValue,
         gstRate: rate,

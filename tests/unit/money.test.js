@@ -18,11 +18,24 @@ describe("Money and GST Calculation Utilities", () => {
 
         expect(result.grossSubtotal).toBe(200);
         expect(result.taxableValue).toBe(190);
+        expect(result.unitPriceInclusive).toBe(118);
         expect(result.totalTax).toBe(34.20);
         expect(result.cgst).toBe(17.10);
         expect(result.sgst).toBe(17.10);
         expect(result.igst).toBe(0);
         expect(result.lineTotal).toBe(224.20);
+    });
+
+    test("returns the GST-inclusive unit price for display", () => {
+        const result = calculateLineItemTax({
+            unitPrice: 100,
+            qty: 1,
+            discount: 0,
+            gstRate: 18
+        });
+
+        expect(result.unitPriceInclusive).toBe(118);
+        expect(result.lineTotal).toBe(118);
     });
 
     test("calculateLineItemTax calculates IGST for inter-state", () => {

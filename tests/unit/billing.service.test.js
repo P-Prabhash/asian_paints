@@ -2,16 +2,40 @@ const mockConnection = {};
 const mockTransaction = jest.fn(callback => callback(mockConnection));
 const mockProductRepository = {
     findByIdsForUpdate: jest.fn(),
+    findByIds: jest.fn(),
+    listProducts: jest.fn(),
     updateStockQty: jest.fn()
 };
 const mockSaleRepository = {
     createSale: jest.fn(),
     createSaleItem: jest.fn()
 };
+const mockCustomerRepository = {
+    findById: jest.fn(),
+    createCustomer: jest.fn(),
+    updateBalance: jest.fn(),
+    addLedgerEntry: jest.fn()
+};
+const mockPaymentRepository = { createPayment: jest.fn() };
+const mockStockRepository = { addMovement: jest.fn() };
+const mockAuditRepository = { createLog: jest.fn() };
+const mockIdempotencyRepository = {
+    findKey: jest.fn(),
+    saveKey: jest.fn()
+};
+const mockGetNextSequenceNumber = jest.fn();
 
 jest.mock("../../src/utils/transaction", () => mockTransaction);
 jest.mock("../../src/repositories/product.repository", () => mockProductRepository);
 jest.mock("../../src/repositories/sale.repository", () => mockSaleRepository);
+jest.mock("../../src/repositories/customer.repository", () => mockCustomerRepository);
+jest.mock("../../src/repositories/payment.repository", () => mockPaymentRepository);
+jest.mock("../../src/repositories/stock.repository", () => mockStockRepository);
+jest.mock("../../src/repositories/audit.repository", () => mockAuditRepository);
+jest.mock("../../src/repositories/idempotency.repository", () => mockIdempotencyRepository);
+jest.mock("../../src/utils/invoice-number", () => ({
+    getNextSequenceNumber: mockGetNextSequenceNumber
+}));
 
 const BillingService = require("../../src/services/billing.service");
 
@@ -33,6 +57,95 @@ describe("BillingService checkout safeguards", () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockProductRepository.findByIdsForUpdate.mockResolvedValue([createProduct(5)]);
+        mockSaleRepository.createSale.mockResolvedValue(51);
+        mockSaleRepository.createSaleItem.mockResolvedValue(undefined);
+        mockPaymentRepository.createPayment.mockResolvedValue(81);
+        mockStockRepository.addMovement.mockResolvedValue(undefined);
+        mockAuditRepository.createLog.mockResolvedValue(undefined);
+        mockIdempotencyRepository.findKey.mockResolvedValue(null);
+    });
+
+    test.each([
+        ["Paint", "PAINT", "paint_invoice_next_number", "PNT-1001"],
+        ["Sunnam Bags", "SUNNAM", "sunnam_invoice_next_number", "SUN-1001"]
+    ])("creates a separate %s invoice with GST-inclusive amount", async (categoryName, category, sequenceKey, invoiceNo) => {
+        mockProductRepository.findByIdsForUpdate.mockResolvedValue([{
+            ...createProduct(5),
+            category_name: categoryName,
+            gst_rate: 18
+        }]);
+        mockGetNextSequenceNumber.mockResolvedValue(invoiceNo);
+
+        const result = await BillingService.processCheckout({
+            items: [{ productId: 1, qty: 1 }],
+            payments: [{ method: "CASH", amount: 118 }]
+        }, 10);
+
+        expect(mockGetNextSequenceNumber).toHaveBeenCalledWith(mockConnection, sequenceKey, category === "PAINT" ? "PNT-" : "SUN-");
+        expect(mockSaleRepository.createSale).toHaveBeenCalledWith(expect.objectContaining({
+            invoiceNo,
+            categoryFilter: category,
+            grandTotal: 118
+        }), mockConnection);
+        expect(result).toMatchObject({
+            invoiceNo,
+            categoryFilter: category,
+            pricesIncludeGst: true,
+            grandTotal: 118
+        });
+        expect(result.items[0]).toMatchObject({
+            unitPrice: 100,
+            unitPriceInclusive: 118,
+            lineTotal: 118
+        });
+    });
+
+    test("rejects Paint and Sunnam products in the same invoice", async () => {
+        mockProductRepository.findByIdsForUpdate.mockResolvedValue([
+            { ...createProduct(5), id: 1, category_name: "Paint" },
+            { ...createProduct(5), id: 2, category_name: "Sunnam Bags" }
+        ]);
+
+        await expect(BillingService.processCheckout({
+            items: [
+                { productId: 1, qty: 1 },
+                { productId: 2, qty: 1 }
+            ],
+            payments: [{ method: "CASH", amount: 200 }]
+        }, 10)).rejects.toMatchObject({ code: "MIXED_CATEGORY_INVOICE" });
+
+        expect(mockSaleRepository.createSale).not.toHaveBeenCalled();
+    });
+
+    test("returns the POS catalog with GST-inclusive display prices and category filtering", async () => {
+        mockProductRepository.listProducts.mockResolvedValue({
+            products: [{
+                id: 1,
+                category_name: "Paint",
+                sale_price: "100.00",
+                gst_rate: "18.00"
+            }],
+            total: 1
+        });
+
+        const result = await BillingService.listProducts({
+            categoryFilter: "PAINT",
+            search: "interior",
+            page: 2,
+            limit: 25
+        });
+
+        expect(mockProductRepository.listProducts).toHaveBeenCalledWith({
+            search: "interior",
+            categoryFilter: "PAINT",
+            activeOnly: true,
+            limit: 25,
+            offset: 25
+        });
+        expect(result.products[0]).toMatchObject({
+            salesCategory: "PAINT",
+            salePriceIncludingGst: 118
+        });
     });
 
     test("rejects duplicate cart lines whose combined quantity exceeds stock", async () => {

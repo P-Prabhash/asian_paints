@@ -9,16 +9,39 @@ const AuditRepository = require("../repositories/audit.repository");
 const IdempotencyRepository = require("../repositories/idempotency.repository");
 const { getNextSequenceNumber } = require("../utils/invoice-number");
 const { calculateInvoiceTotals, roundToTwoDecimals } = require("../utils/money");
+const { getSalesCategory, normalizeCategoryFilter, requireSingleCategory } = require("../utils/sales-category");
 
 class BillingService {
+    static async listProducts({ categoryFilter = "ALL", search, page = 1, limit = 50 } = {}) {
+        const normalizedCategory = normalizeCategoryFilter(categoryFilter);
+        const result = await ProductRepository.listProducts({
+            search,
+            categoryFilter: normalizedCategory,
+            activeOnly: true,
+            limit,
+            offset: (page - 1) * limit
+        });
+
+        return {
+            ...result,
+            products: result.products.map(product => ({
+                ...product,
+                salesCategory: getSalesCategory(product.category_name),
+                salePriceIncludingGst: roundToTwoDecimals(
+                    Number(product.sale_price) * (1 + Number(product.gst_rate) / 100)
+                )
+            }))
+        };
+    }
+
     static async calculateQuote({ categoryFilter = "ALL", isInterState = false, items }) {
         if (!items || items.length === 0) {
             throw new AppError("Cart must contain at least one product", 400, "EMPTY_CART");
         }
 
-        const productIds = items.map(i => i.productId);
-        const [pRows] = await ProductRepository.listProducts({ limit: 1000 });
-        const productMap = new Map(pRows.products.map(p => [p.id, p]));
+        const productIds = [...new Set(items.map(i => i.productId))];
+        const products = await ProductRepository.findByIds(productIds);
+        const productMap = new Map(products.map(p => [p.id, p]));
 
         const itemsToCalculate = [];
         for (const item of items) {
@@ -45,10 +68,12 @@ class BillingService {
             });
         }
 
+        const salesCategory = requireSingleCategory(items.map(item => productMap.get(item.productId)), categoryFilter);
         const totals = calculateInvoiceTotals(itemsToCalculate, isInterState);
         return {
-            categoryFilter,
+            categoryFilter: salesCategory,
             isInterState,
+            pricesIncludeGst: true,
             ...totals
         };
     }
@@ -110,6 +135,7 @@ class BillingService {
                 });
             }
 
+            const salesCategory = requireSingleCategory(items.map(item => productMap.get(item.productId)), categoryFilter);
             const calculatedTotals = calculateInvoiceTotals(itemsToCalculate, isInterState);
 
             let paidTotal = 0;
@@ -158,7 +184,12 @@ class BillingService {
                 }
             }
 
-            const invoiceNo = await getNextSequenceNumber(conn, "invoice_next_number", "INV-");
+            const invoiceSequence = salesCategory === "PAINT"
+                ? ["paint_invoice_next_number", "PNT-"]
+                : salesCategory === "SUNNAM"
+                    ? ["sunnam_invoice_next_number", "SUN-"]
+                    : ["invoice_next_number", "INV-"];
+            const invoiceNo = await getNextSequenceNumber(conn, invoiceSequence[0], invoiceSequence[1]);
 
             let paymentStatus = "PAID";
             if (dueTotal > 0 && paidTotal > 0) paymentStatus = "PARTIAL";
@@ -167,7 +198,7 @@ class BillingService {
             const saleId = await SaleRepository.createSale({
                 invoiceNo,
                 customerId,
-                categoryFilter,
+                categoryFilter: salesCategory,
                 subtotal: calculatedTotals.subtotal,
                 discountTotal: calculatedTotals.discountTotal,
                 taxableTotal: calculatedTotals.taxableTotal,
@@ -263,7 +294,8 @@ class BillingService {
                 invoiceNo,
                 customerId,
                 customerName: customerObj ? customerObj.name : "Walk-in Customer",
-                categoryFilter,
+                categoryFilter: salesCategory,
+                pricesIncludeGst: true,
                 subtotal: calculatedTotals.subtotal,
                 discountTotal: calculatedTotals.discountTotal,
                 taxableTotal: calculatedTotals.taxableTotal,

@@ -1,7 +1,9 @@
 const { pool } = require("../config/database");
+const { roundToTwoDecimals } = require("../utils/money");
+const { normalizeCategoryFilter } = require("../utils/sales-category");
 
 class SaleRepository {
-    static async listSales({ search, startDate, endDate, customerId, paymentStatus, limit = 50, offset = 0 } = {}) {
+    static async listSales({ search, startDate, endDate, customerId, paymentStatus, categoryFilter, limit = 50, offset = 0 } = {}) {
         let where = ["1=1"];
         const params = [];
 
@@ -29,6 +31,11 @@ class SaleRepository {
         if (paymentStatus) {
             where.push("s.`payment_status` = ?");
             params.push(paymentStatus);
+        }
+
+        if (categoryFilter && normalizeCategoryFilter(categoryFilter) !== "ALL") {
+            where.push("s.`category_filter` = ?");
+            params.push(normalizeCategoryFilter(categoryFilter));
         }
 
         const query = `
@@ -70,7 +77,12 @@ class SaleRepository {
 
         const itemsQuery = "SELECT * FROM `sale_items` WHERE `sale_id` = ?";
         const [items] = await conn.query(itemsQuery, [id]);
-        sale.items = items;
+        sale.items = items.map(item => ({
+            ...item,
+            unit_price_inclusive: roundToTwoDecimals(
+                Number(item.unit_price) * (1 + Number(item.tax_rate_snapshot) / 100)
+            )
+        }));
 
         const paymentsQuery = "SELECT * FROM `payments` WHERE `sale_id` = ?";
         const [payments] = await conn.query(paymentsQuery, [id]);

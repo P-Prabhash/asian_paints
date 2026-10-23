@@ -46,6 +46,21 @@ class ProductRepository {
         return rows;
     }
 
+    static async findByIds(ids, conn = pool) {
+        if (!ids || ids.length === 0) return [];
+        const placeholders = ids.map(() => "?").join(",");
+        const query = `
+            SELECT p.*, c.\`name\` as category_name, u.\`code\` as unit_code, u.\`name\` as unit_name, g.\`rate\` as gst_rate
+            FROM \`products\` p
+            JOIN \`categories\` c ON p.\`category_id\` = c.\`id\`
+            JOIN \`units\` u ON p.\`unit_id\` = u.\`id\`
+            JOIN \`gst_rates\` g ON p.\`gst_rate_id\` = g.\`id\`
+            WHERE p.\`id\` IN (${placeholders})
+        `;
+        const [rows] = await conn.query(query, ids);
+        return rows;
+    }
+
     static async findBySku(sku) {
         const [rows] = await pool.query("SELECT * FROM `products` WHERE `sku` = ? LIMIT 1", [sku]);
         return rows[0] || null;
@@ -121,7 +136,7 @@ class ProductRepository {
         await conn.query("UPDATE `products` SET `stock_qty` = ? WHERE `id` = ?", [newQty, id]);
     }
 
-    static async listProducts({ search, categoryId, activeOnly = false, limit = 50, offset = 0 } = {}) {
+    static async listProducts({ search, categoryId, categoryFilter, activeOnly = false, limit = 50, offset = 0 } = {}) {
         let where = ["1=1"];
         const params = [];
 
@@ -134,6 +149,14 @@ class ProductRepository {
         if (categoryId) {
             where.push("p.`category_id` = ?");
             params.push(categoryId);
+        }
+
+        if (categoryFilter === "PAINT") {
+            where.push("LOWER(c.`name`) LIKE ?");
+            params.push("%paint%");
+        } else if (categoryFilter === "SUNNAM") {
+            where.push("(LOWER(c.`name`) LIKE ? OR LOWER(c.`name`) LIKE ?)");
+            params.push("%sunnam%", "%lime%");
         }
 
         if (activeOnly) {
@@ -154,6 +177,7 @@ class ProductRepository {
         const countQuery = `
             SELECT COUNT(*) as total
             FROM \`products\` p
+            JOIN \`categories\` c ON p.\`category_id\` = c.\`id\`
             WHERE ${where.join(" AND ")}
         `;
 

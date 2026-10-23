@@ -147,14 +147,17 @@ Verifies file checksum integrity and restores database state safely.
 | **Roles** | `GET /api/v1/roles` | List system roles | `roles:manage` |
 | **Roles** | `PUT /api/v1/roles/:id/permissions` | Update role permissions | `roles:manage` |
 | **POS** | `GET /api/v1/products/lookup?code=X` | Barcode/SKU scan lookup | `products:read` |
+| **POS** | `GET /api/v1/billing/products` | Paginated active catalog with GST-inclusive prices; filter with `categoryFilter=PAINT` or `SUNNAM` | `billing:read` |
 | **Products** | `GET /api/v1/products` | List products | `products:read` |
 | **Products** | `POST /api/v1/products` | Create product | `products:create` |
 | **Categories** | `GET /api/v1/categories` | List categories | `products:read` |
 | **Units** | `GET /api/v1/units` | List units | `products:read` |
 | **GST** | `GET /api/v1/gst-rates` | List GST tax rates | `products:read` |
-| **Billing** | `POST /api/v1/billing/quote` | Calculate GST totals (preview) | `billing:quote` |
-| **Billing** | `POST /api/v1/billing/checkout` | POS checkout & atomic invoice | `billing:checkout` |
-| **Sales** | `GET /api/v1/sales` | List invoices | `sales:read` |
+| **Billing** | `POST /api/v1/billing/quote` | Calculate GST-inclusive quote and tax breakdown (preview) | `billing:quote` |
+| **Billing** | `POST /api/v1/billing/checkout` | POS checkout, category-specific invoice, stock deduction, and payment recording | `billing:checkout` |
+| **Sales** | `GET /api/v1/sales` | List/filter Paint and Sunnam invoices | `sales:read` |
+| **Sales** | `GET /api/v1/sales/:id` | Get invoice line items, GST, and payments | `sales:read` |
+| **Sales** | `GET /api/v1/sales/:id/receipt` | Print-ready 80mm thermal invoice HTML | `sales:read` |
 | **Sales** | `POST /api/v1/sales/:id/returns` | Process sales return & restock | `sales:return` |
 | **Customers** | `GET /api/v1/customers` | List customer accounts | `customers:read` |
 | **Customers** | `GET /api/v1/customers/:id/ledger` | View customer credit ledger | `customers:read` |
