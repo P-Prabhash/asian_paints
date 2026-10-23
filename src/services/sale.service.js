@@ -109,7 +109,7 @@ class SaleService {
 
                 const lockedProducts = await ProductRepository.findByIdsForUpdate([rItem.productId], conn);
                 if (lockedProducts.length > 0) {
-                    const newStock = roundToTwoDecimals(lockedProducts[0].stock_qty + rItem.qty);
+                    const newStock = roundToTwoDecimals(Number(lockedProducts[0].stock_qty) + rItem.qty);
                     await ProductRepository.updateStockQty(rItem.productId, newStock, conn);
                 }
 

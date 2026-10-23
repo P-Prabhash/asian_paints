@@ -88,7 +88,7 @@ class PurchaseService {
                     lineTotal: item.lineTotal
                 }, conn);
 
-                const newStock = item.currentStock + item.qty;
+                const newStock = Math.round((Number(item.currentStock) + item.qty) * 100) / 100;
                 await ProductRepository.updateStockQty(item.productId, newStock, conn);
 
                 await StockRepository.addMovement({

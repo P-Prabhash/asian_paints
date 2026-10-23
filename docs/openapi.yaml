@@ -147,13 +147,43 @@ paths:
     get:
       summary: Get product by ID
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
       responses:
-        '200': { description: Product details }
+        '200':
+          description: Product details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '404': { description: Product not found }
     patch:
       summary: Update product details
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProductRequest'
       responses:
-        '200': { description: Product updated }
+        '200':
+          description: Product updated and the saved product returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400': { description: Invalid product fields or related category, unit, or GST rate }
+        '404': { description: Product not found }
+        '409': { description: SKU or barcode already exists }
 
   /billing/quote:
     post:
@@ -201,10 +231,61 @@ paths:
       responses:
         '200': { description: Customer list }
     post:
-      summary: Register customer
+      summary: Register customer with contact, address, and account details
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCustomerRequest'
       responses:
-        '201': { description: Customer registered }
+        '201':
+          description: Customer created and returned with persisted details
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    $ref: '#/components/schemas/Customer'
+                  meta:
+                    type: object
+                    properties:
+                      requestId: { type: string }
+        '400': { description: Invalid customer details }
+        '409': { description: Customer code or mobile number already exists }
+
+  /customers/{id}:
+    get:
+      summary: Get customer by ID
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200': { description: Customer details }
+        '404': { description: Customer not found }
+    patch:
+      summary: Update customer contact, address, and account details
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCustomerRequest'
+      responses:
+        '200': { description: Customer updated }
+        '404': { description: Customer not found }
 
   /customers/{id}/ledger:
     get:
@@ -224,22 +305,78 @@ paths:
     get:
       summary: View current stock levels
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+          description: Search by product name, SKU, or barcode
+        - in: query
+          name: categoryId
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: lowStock
+          schema: { type: boolean, default: false }
+          description: Include only products at or below their reorder level
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
-        '200': { description: Stock levels }
+        '200':
+          description: Current inventory quantities, including products with zero stock
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockListResponse'
 
   /stock/movements:
     get:
       summary: View stock movement history
       security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: productId
+          schema: { type: integer, minimum: 1 }
+        - in: query
+          name: movementType
+          schema:
+            type: string
+            enum: [INITIAL_STOCK, PURCHASE_RECEIPT, SALE_OUT, SALE_RETURN_IN, MANUAL_ADJUSTMENT]
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
       responses:
-        '200': { description: Stock movement logs }
+        '200':
+          description: Paginated stock movement history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockMovementListResponse'
 
   /stock/adjustments:
     post:
-      summary: Perform manual stock adjustment
+      summary: Adjust stock quantity and record the inventory movement
       security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustmentRequest'
       responses:
-        '200': { description: Stock adjusted }
+        '200':
+          description: Stock quantity updated and movement recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockAdjustmentResponse'
+        '400': { description: Invalid adjustment or insufficient stock }
+        '404': { description: Product not found }
 
   /purchases:
     get:
@@ -304,3 +441,260 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+  schemas:
+    StockAdjustmentRequest:
+      type: object
+      required: [productId, adjustmentType, quantity, reason]
+      properties:
+        productId:
+          oneOf:
+            - { type: integer, minimum: 1 }
+            - { type: string, pattern: '^[1-9]\d*$' }
+          example: 12
+        adjustmentType:
+          type: string
+          enum: [ADD, REMOVE, SET]
+          description: ADD/REMOVE use a positive delta; SET uses the target on-hand quantity and may be zero.
+          example: ADD
+        quantity:
+          oneOf:
+            - { type: number, minimum: 0, maximum: 9999999999.99 }
+            - { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          example: 5.5
+        reason: { type: string, minLength: 3, maxLength: 255, example: "Physical stock count correction" }
+    StockAdjustmentResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            productId: { type: integer, example: 12 }
+            sku: { type: string, example: SKU-001 }
+            productName: { type: string, example: "Interior Paint" }
+            previousStock: { type: number, example: 10.5 }
+            newStock: { type: number, example: 16 }
+            lowStock: { type: boolean, example: false }
+            adjustmentType: { type: string, enum: [ADD, REMOVE, SET], example: ADD }
+            reason: { type: string, example: "Physical stock count correction" }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+    StockListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, example: 12 }
+              sku: { type: string, example: SKU-001 }
+              barcode: { type: string, nullable: true, example: "8901234567890" }
+              name: { type: string, example: "Interior Paint" }
+              brand: { type: string, nullable: true, example: "Asian Paints" }
+              size: { type: string, nullable: true, example: "20 L" }
+              shade: { type: string, nullable: true, example: "White" }
+              stock_qty: { type: string, example: "16.00" }
+              reorder_level: { type: string, example: "5.00" }
+              stock_alert_description: { type: string, nullable: true }
+              purchase_price: { type: string, example: "1200.00" }
+              sale_price: { type: string, example: "1500.00" }
+              category_name: { type: string, example: "Paints" }
+              unit_code: { type: string, example: LTR }
+              unit_name: { type: string, example: Litre }
+              low_stock: { type: integer, enum: [0, 1], example: 0 }
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    StockMovementListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer, example: 85 }
+              product_id: { type: integer, example: 12 }
+              product_name: { type: string, example: "Interior Paint" }
+              sku: { type: string, example: SKU-001 }
+              movement_type: { type: string, enum: [INITIAL_STOCK, PURCHASE_RECEIPT, SALE_OUT, SALE_RETURN_IN, MANUAL_ADJUSTMENT] }
+              qty_in: { type: string, example: "5.00" }
+              qty_out: { type: string, example: "0.00" }
+              reference_type: { type: string, nullable: true, example: ADJUSTMENT }
+              reference_id: { type: string, nullable: true, example: "85" }
+              reason: { type: string, nullable: true, example: "Physical stock count correction" }
+              created_by: { type: integer, example: 3 }
+              user_name: { type: string, example: "Store Admin" }
+              created_at: { type: string, format: date-time }
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
+    PaginationMeta:
+      type: object
+      properties:
+        requestId: { type: string }
+        pagination:
+          type: object
+          properties:
+            page: { type: integer, example: 1 }
+            limit: { type: integer, example: 50 }
+            total: { type: integer, example: 120 }
+            totalPages: { type: integer, example: 3 }
+    UpdateProductRequest:
+      type: object
+      minProperties: 1
+      description: Send only fields to change. Numeric fields may be sent as JSON numbers or numeric strings; active may be a JSON boolean or "true"/"false".
+      properties:
+        sku: { type: string, minLength: 1, maxLength: 50, example: SKU-001 }
+        barcode: { type: string, maxLength: 100, nullable: true, example: "8901234567890" }
+        name: { type: string, minLength: 2, maxLength: 150, example: Premium Interior Paint }
+        categoryId: { type: integer, minimum: 1, example: 1 }
+        brand: { type: string, maxLength: 100, nullable: true, example: Asian Paints }
+        size: { type: string, maxLength: 50, nullable: true, example: "20 L" }
+        shade: { type: string, maxLength: 50, nullable: true, example: White }
+        hsnCode: { type: string, maxLength: 20, nullable: true, example: "32091090" }
+        unitId: { type: integer, minimum: 1, example: 1 }
+        gstRateId: { type: integer, minimum: 1, example: 1 }
+        purchasePrice:
+          oneOf:
+            - { type: number, minimum: 0 }
+            - { type: string, pattern: '^\d+(\.\d+)?$' }
+          example: 1200
+        salePrice:
+          oneOf:
+            - { type: number, minimum: 0 }
+            - { type: string, pattern: '^\d+(\.\d+)?$' }
+          example: 1500
+        reorderLevel:
+          oneOf:
+            - { type: number, minimum: 0 }
+            - { type: string, pattern: '^\d+(\.\d+)?$' }
+          example: 5
+        stockAlertDescription: { type: string, maxLength: 255, nullable: true, example: "Restock when remaining stock reaches minimum level" }
+        stockQty:
+          oneOf:
+            - { type: number, minimum: 0 }
+            - { type: string, pattern: '^\d+(\.\d+)?$' }
+          description: Setting this value updates on-hand inventory and records an adjustment movement.
+          example: 20
+        active:
+          oneOf:
+            - { type: boolean }
+            - { type: string, enum: ["true", "false"] }
+          example: true
+    ProductResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            id: { type: integer, example: 1 }
+            sku: { type: string, example: SKU-001 }
+            barcode: { type: string, nullable: true, example: "8901234567890" }
+            name: { type: string, example: Premium Interior Paint }
+            category_id: { type: integer, example: 1 }
+            category_name: { type: string, example: Paints }
+            brand: { type: string, nullable: true, example: Asian Paints }
+            size: { type: string, nullable: true, example: "20 L" }
+            shade: { type: string, nullable: true, example: White }
+            hsn_code: { type: string, nullable: true, example: "32091090" }
+            unit_id: { type: integer, example: 1 }
+            unit_code: { type: string, example: LTR }
+            unit_name: { type: string, example: Litre }
+            gst_rate_id: { type: integer, example: 1 }
+            gst_rate: { type: number, example: 18 }
+            purchase_price: { type: string, example: "1200.00" }
+            sale_price: { type: string, example: "1500.00" }
+            reorder_level: { type: string, example: "5.00" }
+            stock_alert_description: { type: string, nullable: true, example: "Restock when remaining stock reaches minimum level" }
+            stock_qty: { type: string, example: "20.00" }
+            active: { type: integer, enum: [0, 1], example: 1 }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+    CreateCustomerRequest:
+      type: object
+      required: [name, mobile]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100, example: "Ravi Kumar" }
+        customerCode: { type: string, maxLength: 50, nullable: true, example: "CUS-0001" }
+        mobile: { type: string, minLength: 7, maxLength: 20, example: "+919876543210" }
+        alternatePhone: { type: string, maxLength: 20, nullable: true, example: "04012345678" }
+        email: { type: string, format: email, maxLength: 254, nullable: true, example: "ravi@example.com" }
+        addressLine: { type: string, nullable: true, example: "12 Main Road" }
+        city: { type: string, maxLength: 100, nullable: true, example: "Hyderabad" }
+        state: { type: string, maxLength: 100, nullable: true, example: "Telangana" }
+        pinCode: { type: string, maxLength: 20, nullable: true, example: "500001" }
+        country: { type: string, maxLength: 100, nullable: true, example: "India" }
+        gstin: { type: string, maxLength: 20, nullable: true, example: "36ABCDE1234F1Z5" }
+        pan: { type: string, maxLength: 10, nullable: true, example: "ABCDE1234F" }
+        customerType: { type: string, maxLength: 30, nullable: true, example: "BUSINESS" }
+        openingBalance:
+          oneOf:
+            - { type: number, minimum: -9999999999.99, maximum: 9999999999.99 }
+            - { type: string, pattern: '^-?\d+(\.\d{1,2})?$' }
+          default: 0
+          example: 1250.50
+        creditLimit:
+          oneOf:
+            - { type: number, minimum: 0, maximum: 9999999999.99 }
+            - { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+          default: 0
+          example: 25000
+        paymentTerms: { type: string, maxLength: 100, nullable: true, example: "Net 30 days" }
+        notes: { type: string, nullable: true, example: "Preferred delivery in the morning" }
+        active: { type: boolean, default: true }
+    UpdateCustomerRequest:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 100 }
+        customerCode: { type: string, maxLength: 50, nullable: true }
+        mobile: { type: string, minLength: 7, maxLength: 20 }
+        alternatePhone: { type: string, maxLength: 20, nullable: true }
+        email: { type: string, format: email, maxLength: 254, nullable: true }
+        addressLine: { type: string, nullable: true }
+        city: { type: string, maxLength: 100, nullable: true }
+        state: { type: string, maxLength: 100, nullable: true }
+        pinCode: { type: string, maxLength: 20, nullable: true }
+        country: { type: string, maxLength: 100, nullable: true }
+        gstin: { type: string, maxLength: 20, nullable: true }
+        pan: { type: string, maxLength: 10, nullable: true }
+        customerType: { type: string, maxLength: 30, nullable: true }
+        creditLimit:
+          oneOf:
+            - { type: number, minimum: 0, maximum: 9999999999.99 }
+            - { type: string, pattern: '^\d+(\.\d{1,2})?$' }
+        paymentTerms: { type: string, maxLength: 100, nullable: true }
+        notes: { type: string, nullable: true }
+        active: { type: boolean }
+    Customer:
+      type: object
+      properties:
+        id: { type: integer, example: 17 }
+        name: { type: string, example: "Ravi Kumar" }
+        customer_code: { type: string, nullable: true, example: "CUS-0001" }
+        mobile: { type: string, nullable: true, example: "+919876543210" }
+        alternate_phone: { type: string, nullable: true, example: "04012345678" }
+        email: { type: string, nullable: true, example: "ravi@example.com" }
+        address: { type: string, nullable: true, example: "12 Main Road" }
+        address_line: { type: string, nullable: true, example: "12 Main Road" }
+        city: { type: string, nullable: true, example: "Hyderabad" }
+        state: { type: string, nullable: true, example: "Telangana" }
+        pin_code: { type: string, nullable: true, example: "500001" }
+        country: { type: string, nullable: true, example: "India" }
+        gstin: { type: string, nullable: true, example: "36ABCDE1234F1Z5" }
+        pan: { type: string, nullable: true, example: "ABCDE1234F" }
+        customer_type: { type: string, nullable: true, example: "BUSINESS" }
+        opening_balance: { type: string, example: "1250.50" }
+        current_balance: { type: string, example: "1250.50" }
+        credit_limit: { type: string, example: "25000.00" }
+        payment_terms: { type: string, nullable: true, example: "Net 30 days" }
+        notes: { type: string, nullable: true, example: "Preferred delivery in the morning" }
+        active: { type: integer, enum: [0, 1], example: 1 }

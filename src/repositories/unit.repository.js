@@ -1,6 +1,11 @@
 const { pool } = require("../config/database");
 
 class UnitRepository {
+    static async findById(id) {
+        const [rows] = await pool.query("SELECT * FROM `units` WHERE `id` = ? LIMIT 1", [id]);
+        return rows[0] || null;
+    }
+
     static async listUnits() {
         const [rows] = await pool.query(
             `SELECT u.*, bu.\`code\` as base_unit_code

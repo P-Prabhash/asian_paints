@@ -22,14 +22,31 @@ class CustomerService {
             if (existing) throw new AppError("Customer with this mobile number already exists", 409, "MOBILE_EXISTS");
         }
 
-        const newId = await CustomerRepository.createCustomer(customerData);
+        if (customerData.customerCode) {
+            const existing = await CustomerRepository.findByCode(customerData.customerCode);
+            if (existing) throw new AppError("Customer code already exists", 409, "CUSTOMER_CODE_EXISTS");
+        }
+
+        let newId;
+        try {
+            newId = await CustomerRepository.createCustomer(customerData);
+        } catch (error) {
+            if (error.code === "ER_DUP_ENTRY") {
+                throw new AppError("Customer code already exists", 409, "CUSTOMER_CODE_EXISTS");
+            }
+            throw error;
+        }
 
         await AuditRepository.createLog({
             userId: actorId,
             action: "CUSTOMER_CREATED",
             entityType: "CUSTOMER",
             entityId: newId,
-            metadata: { name: customerData.name, mobile: customerData.mobile }
+            metadata: {
+                name: customerData.name,
+                customerCode: customerData.customerCode,
+                mobile: customerData.mobile
+            }
         });
 
         return this.getCustomerById(newId);
@@ -38,6 +55,20 @@ class CustomerService {
     static async updateCustomer(id, updates, actorId) {
         const customer = await CustomerRepository.findById(id);
         if (!customer) throw new AppError("Customer not found", 404, "CUSTOMER_NOT_FOUND");
+
+        if (updates.mobile && updates.mobile !== customer.mobile) {
+            const existing = await CustomerRepository.findByMobile(updates.mobile);
+            if (existing && existing.id !== id) {
+                throw new AppError("Customer with this mobile number already exists", 409, "MOBILE_EXISTS");
+            }
+        }
+
+        if (updates.customerCode && updates.customerCode !== customer.customer_code) {
+            const existing = await CustomerRepository.findByCode(updates.customerCode);
+            if (existing && existing.id !== id) {
+                throw new AppError("Customer code already exists", 409, "CUSTOMER_CODE_EXISTS");
+            }
+        }
 
         await CustomerRepository.updateCustomer(id, updates);
 

@@ -22,8 +22,10 @@ class StockRepository {
 
         const query = `
             SELECT p.\`id\`, p.\`sku\`, p.\`barcode\`, p.\`name\`, p.\`brand\`, p.\`size\`, p.\`shade\`,
-                   p.\`stock_qty\`, p.\`reorder_level\`, p.\`purchase_price\`, p.\`sale_price\`,
-                   c.\`name\` as category_name, u.\`code\` as unit_code
+                   p.\`stock_qty\`, p.\`reorder_level\`, p.\`stock_alert_description\`,
+                   p.\`purchase_price\`, p.\`sale_price\`,
+                   c.\`name\` as category_name, u.\`code\` as unit_code, u.\`name\` as unit_name,
+                   (p.\`stock_qty\` <= p.\`reorder_level\`) as low_stock
             FROM \`products\` p
             JOIN \`categories\` c ON p.\`category_id\` = c.\`id\`
             JOIN \`units\` u ON p.\`unit_id\` = u.\`id\`

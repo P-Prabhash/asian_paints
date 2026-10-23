@@ -11,6 +11,26 @@ const validProduct = {
 };
 
 describe("Product validation", () => {
+    test("accepts a partial product update with numeric form values", () => {
+        expect(updateProductSchema.parse({
+            name: "  Updated Paint  ",
+            salePrice: "1750.50",
+            stockQty: "0",
+            active: "false"
+        })).toEqual({
+            name: "Updated Paint",
+            salePrice: 1750.5,
+            stockQty: 0,
+            active: false
+        });
+    });
+
+    test("rejects empty updates, invalid numbers, and negative stock", () => {
+        expect(updateProductSchema.safeParse({}).success).toBe(false);
+        expect(updateProductSchema.safeParse({ purchasePrice: "not-a-number" }).success).toBe(false);
+        expect(updateProductSchema.safeParse({ stockQty: -1 }).success).toBe(false);
+    });
+
     test("accepts stock alert description and zero stock thresholds", () => {
         const product = createProductSchema.parse({
             ...validProduct,

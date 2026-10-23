@@ -57,14 +57,14 @@ class ProductRepository {
         return rows[0] || null;
     }
 
-    static async createProduct(productData) {
+    static async createProduct(productData, conn = pool) {
         const {
             sku, barcode, name, categoryId, brand, size, shade, hsnCode,
             unitId, gstRateId, purchasePrice, salePrice, reorderLevel,
             stockAlertDescription, stockQty, active
         } = productData;
 
-        const [result] = await pool.query(
+        const [result] = await conn.query(
             `INSERT INTO \`products\`
             (\`sku\`, \`barcode\`, \`name\`, \`category_id\`, \`brand\`, \`size\`, \`shade\`, \`hsn_code\`, \`unit_id\`, \`gst_rate_id\`, \`purchase_price\`, \`sale_price\`, \`reorder_level\`, \`stock_alert_description\`, \`stock_qty\`, \`active\`)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -77,7 +77,7 @@ class ProductRepository {
         return result.insertId;
     }
 
-    static async updateProduct(id, updates) {
+    static async updateProduct(id, updates, conn = pool) {
         const fields = [];
         const values = [];
 
@@ -110,7 +110,7 @@ class ProductRepository {
         if (fields.length === 0) return false;
 
         values.push(id);
-        const [result] = await pool.query(
+        const [result] = await conn.query(
             `UPDATE \`products\` SET ${fields.join(", ")} WHERE \`id\` = ?`,
             values
         );
