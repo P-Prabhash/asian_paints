@@ -66,4 +66,13 @@ describe("API Route Architecture & Uniqueness Tests", () => {
         expect(routeKeys.has("GET /api/v1/units")).toBe(true);
         expect(routeKeys.has("GET /api/v1/gst-rates")).toBe(true);
     });
+
+    test("purchase and sale mutation endpoints are registered", () => {
+        const routeKeys = new Set(extractAllRoutes(app).map(route => `${route.method} ${route.path}`));
+
+        expect(routeKeys.has("GET /api/v1/purchases/:id")).toBe(true);
+        expect(routeKeys.has("PUT /api/v1/purchases/:id")).toBe(true);
+        expect(routeKeys.has("DELETE /api/v1/purchases/:id")).toBe(true);
+        expect(routeKeys.has("DELETE /api/v1/sales/:id")).toBe(true);
+    });
 });

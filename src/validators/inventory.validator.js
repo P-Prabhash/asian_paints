@@ -9,7 +9,11 @@ const numericInput = (schema) => z.preprocess(
 
 const stockAdjustmentSchema = z.object({
     productId: numericInput(z.number().int().positive("Product ID is required")),
-    adjustmentType: z.enum(["ADD", "REMOVE", "SET"]),
+    adjustmentType: z.preprocess(value => {
+        if (value === "INCREASE") return "ADD";
+        if (value === "DECREASE") return "REMOVE";
+        return value;
+    }, z.enum(["ADD", "REMOVE", "SET"])),
     quantity: numericInput(
         z.number()
             .finite("Quantity must be a finite number")

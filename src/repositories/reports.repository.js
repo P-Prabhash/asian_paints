@@ -5,7 +5,7 @@ class ReportsRepository {
         const today = new Date().toISOString().split("T")[0];
 
         const [salesRows] = await pool.query(
-            "SELECT COUNT(*) as invoice_count, COALESCE(SUM(`grand_total`), 0) as today_sales, COALESCE(SUM(`paid_total`), 0) as today_collections, COALESCE(SUM(`due_total`), 0) as today_credit FROM `sales` WHERE DATE(`created_at`) = ?",
+            "SELECT COUNT(*) as invoice_count, COALESCE(SUM(`grand_total`), 0) as today_sales, COALESCE(SUM(`paid_total`), 0) as today_collections, COALESCE(SUM(`due_total`), 0) as today_credit FROM `sales` WHERE `status` = 'COMPLETED' AND DATE(`created_at`) = ?",
             [today]
         );
 
@@ -18,14 +18,15 @@ class ReportsRepository {
         );
 
         const [purchaseRows] = await pool.query(
-            "SELECT COALESCE(SUM(`grand_total`), 0) as today_purchases FROM `purchases` WHERE DATE(`created_at`) = ?",
+            "SELECT COALESCE(SUM(`grand_total`), 0) as today_purchases FROM `purchases` WHERE `status` = 'COMPLETED' AND DATE(`created_at`) = ?",
             [today]
         );
 
         const [trendRows] = await pool.query(`
             SELECT DATE(\`created_at\`) as date, COUNT(*) as invoice_count, COALESCE(SUM(\`grand_total\`), 0) as total_sales
             FROM \`sales\`
-            WHERE \`created_at\` >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+            WHERE \`status\` = 'COMPLETED'
+              AND \`created_at\` >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
             GROUP BY DATE(\`created_at\`)
             ORDER BY date ASC
         `);
@@ -57,7 +58,7 @@ class ReportsRepository {
                    COALESCE(SUM(\`paid_total\`), 0) as paid_total,
                    COALESCE(SUM(\`due_total\`), 0) as due_total
             FROM \`sales\`
-            WHERE \`created_at\` BETWEEN ? AND ?
+            WHERE \`status\` = 'COMPLETED' AND \`created_at\` BETWEEN ? AND ?
             GROUP BY DATE(\`created_at\`)
             ORDER BY date DESC
         `, [`${startDate} 00:00:00`, `${endDate} 23:59:59`]);
@@ -77,7 +78,7 @@ class ReportsRepository {
             JOIN \`sales\` s ON si.\`sale_id\` = s.\`id\`
             JOIN \`products\` p ON si.\`product_id\` = p.\`id\`
             JOIN \`categories\` c ON p.\`category_id\` = c.\`id\`
-            WHERE s.\`created_at\` BETWEEN ? AND ?
+            WHERE s.\`status\` = 'COMPLETED' AND s.\`created_at\` BETWEEN ? AND ?
             GROUP BY si.\`product_id\`, si.\`product_name_snapshot\`, si.\`sku_snapshot\`, c.\`name\`
             ORDER BY total_revenue DESC
         `, [`${startDate} 00:00:00`, `${endDate} 23:59:59`]);
@@ -95,7 +96,7 @@ class ReportsRepository {
                    SUM(CASE WHEN s.\`igst_total\` > 0 THEN si.\`tax_amount\` ELSE 0 END) as igst
             FROM \`sale_items\` si
             JOIN \`sales\` s ON si.\`sale_id\` = s.\`id\`
-            WHERE s.\`created_at\` BETWEEN ? AND ?
+            WHERE s.\`status\` = 'COMPLETED' AND s.\`created_at\` BETWEEN ? AND ?
             GROUP BY si.\`tax_rate_snapshot\`
             ORDER BY gst_rate ASC
         `, [`${startDate} 00:00:00`, `${endDate} 23:59:59`]);

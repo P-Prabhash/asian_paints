@@ -5,6 +5,8 @@ const numericInput = (schema) => z.preprocess(
     schema
 );
 
+const MAX_QUANTITY = 9999999999.99;
+
 const billingProductsQuerySchema = z.object({
     categoryFilter: z.preprocess(value => {
         if (typeof value !== "string") return value;
@@ -70,7 +72,11 @@ const checkoutSchema = z.object({
 
 const saleReturnItemSchema = z.object({
     productId: z.number().int().positive(),
-    qty: z.number().positive("Return quantity must be positive")
+    qty: z.number()
+        .finite()
+        .positive("Return quantity must be positive")
+        .max(MAX_QUANTITY)
+        .refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 0.000001, "Return quantity may have at most 2 decimal places")
 });
 
 const saleReturnSchema = z.object({
@@ -78,10 +84,15 @@ const saleReturnSchema = z.object({
     items: z.array(saleReturnItemSchema).min(1, "At least one return item is required")
 });
 
+const saleIdentifierParamSchema = z.object({
+    id: z.string().trim().min(1, "Sale ID or invoice number is required").max(50)
+});
+
 module.exports = {
     billingProductsQuerySchema,
     quoteSchema,
     checkoutSchema,
     invoiceNoSchema,
-    saleReturnSchema
+    saleReturnSchema,
+    saleIdentifierParamSchema
 };

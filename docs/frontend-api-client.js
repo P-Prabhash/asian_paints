@@ -157,6 +157,12 @@ class ApiClient {
         return this.request(`/sales/${saleId}`);
     }
 
+    static async voidSale(saleIdOrInvoiceNo) {
+        return this.request(`/sales/${encodeURIComponent(saleIdOrInvoiceNo)}`, {
+            method: 'DELETE'
+        });
+    }
+
     static async getSaleReceiptHtml(saleId) {
         const response = await fetch(`${API_CONFIG.baseURL}/sales/${saleId}/receipt`, {
             headers: {
@@ -196,6 +202,37 @@ class ApiClient {
         return this.request('/stock/adjustments', {
             method: 'POST',
             body: adjustmentPayload
+        });
+    }
+
+    static async increaseStock(productId, quantity, reason) {
+        return this.adjustStock({ productId, adjustmentType: 'INCREASE', quantity, reason });
+    }
+
+    static async decreaseStock(productId, quantity, reason) {
+        return this.adjustStock({ productId, adjustmentType: 'DECREASE', quantity, reason });
+    }
+
+    // Purchases
+    static async getPurchases(params = {}) {
+        const query = new URLSearchParams(params).toString();
+        return this.request(`/purchases${query ? '?' + query : ''}`);
+    }
+
+    static async getPurchase(purchaseId) {
+        return this.request(`/purchases/${purchaseId}`);
+    }
+
+    static async updatePurchase(purchaseId, purchaseData) {
+        return this.request(`/purchases/${purchaseId}`, {
+            method: 'PUT',
+            body: purchaseData
+        });
+    }
+
+    static async voidPurchase(purchaseId) {
+        return this.request(`/purchases/${purchaseId}`, {
+            method: 'DELETE'
         });
     }
 

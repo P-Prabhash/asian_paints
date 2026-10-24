@@ -25,6 +25,11 @@ class CustomerRepository {
         return rows[0] || null;
     }
 
+    static async findByIdForUpdate(id, conn) {
+        const [rows] = await conn.query("SELECT * FROM `customers` WHERE `id` = ? LIMIT 1 FOR UPDATE", [id]);
+        return rows[0] || null;
+    }
+
     static async findByMobile(mobile) {
         if (!mobile) return null;
         const [rows] = await pool.query("SELECT * FROM `customers` WHERE `mobile` = ? LIMIT 1", [mobile]);
@@ -125,6 +130,14 @@ class CustomerRepository {
         const [countRows] = await pool.query(countQuery, [customerId]);
 
         return { ledger: rows, total: countRows[0].total };
+    }
+
+    static async getSaleReturnCredits(saleId, conn = pool) {
+        const [rows] = await conn.query(
+            "SELECT COALESCE(SUM(`credit`), 0) AS `amount` FROM `customer_ledger` WHERE `sale_id` = ? AND `entry_type` = 'SALE_RETURN'",
+            [saleId]
+        );
+        return Number(rows[0].amount);
     }
 
     static async addLedgerEntry({ customerId, saleId, paymentId, entryType, debit = 0, credit = 0, balanceAfter, notes }, conn = pool) {

@@ -16,6 +16,18 @@ describe("Stock adjustment validation", () => {
     });
 
     test.each([
+        ["INCREASE", "ADD"],
+        ["DECREASE", "REMOVE"]
+    ])("normalizes %s adjustment operations to %s", (input, normalized) => {
+        expect(stockAdjustmentSchema.parse({
+            productId: 12,
+            adjustmentType: input,
+            quantity: 2,
+            reason: "Stock correction"
+        }).adjustmentType).toBe(normalized);
+    });
+
+    test.each([
         { productId: 12, adjustmentType: "ADD", quantity: 0, reason: "Counted stock" },
         { productId: 12, adjustmentType: "REMOVE", quantity: -1, reason: "Counted stock" },
         { productId: 12, adjustmentType: "ADD", quantity: "2.345", reason: "Counted stock" },

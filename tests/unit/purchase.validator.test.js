@@ -1,4 +1,4 @@
-const { createPurchaseSchema } = require("../../src/validators/supplier.validator");
+const { createPurchaseSchema, purchaseIdParamSchema } = require("../../src/validators/supplier.validator");
 
 describe("Purchase request validation", () => {
     test("coerces numeric form values and applies line-item defaults", () => {
@@ -38,5 +38,16 @@ describe("Purchase request validation", () => {
             invoiceDate: "2026-10-24",
             items: [{ productId: 12, qty: 0, unitCost: 5, gstRate: 101 }]
         }).success).toBe(false);
+
+        expect(createPurchaseSchema.safeParse({
+            supplierId: 3,
+            invoiceDate: "2026-10-24",
+            items: [{ productId: 12, qty: 1.234, unitCost: 5 }]
+        }).success).toBe(false);
+    });
+
+    test("validates positive purchase route IDs from URL strings", () => {
+        expect(purchaseIdParamSchema.parse({ id: "44" })).toEqual({ id: 44 });
+        expect(purchaseIdParamSchema.safeParse({ id: "0" }).success).toBe(false);
     });
 });

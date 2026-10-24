@@ -34,14 +34,14 @@ class PurchaseRepository {
         return { purchases: rows, total: countRows[0].total };
     }
 
-    static async findById(id, conn = pool) {
+    static async findById(id, conn = pool, lock = false) {
         const query = `
             SELECT p.*, s.\`name\` as supplier_name, u.\`name\` as creator_name
             FROM \`purchases\` p
             JOIN \`suppliers\` s ON p.\`supplier_id\` = s.\`id\`
             JOIN \`users\` u ON p.\`created_by\` = u.\`id\`
             WHERE p.\`id\` = ?
-            LIMIT 1
+            LIMIT 1${lock ? " FOR UPDATE" : ""}
         `;
         const [rows] = await conn.query(query, [id]);
         if (rows.length === 0) return null;
@@ -77,6 +77,28 @@ class PurchaseRepository {
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [purchaseId, productId, qty, unitCost, discount, taxableValue, taxAmount, lineTotal]
         );
+    }
+
+    static async updatePurchase(id, { supplierId, supplierInvoiceNo, invoiceDate, subtotal, taxTotal, grandTotal, notes }, conn) {
+        await conn.query(
+            `UPDATE \`purchases\`
+             SET \`supplier_id\` = ?, \`supplier_invoice_no\` = ?, \`invoice_date\` = ?,
+                 \`subtotal\` = ?, \`tax_total\` = ?, \`grand_total\` = ?, \`notes\` = ?
+             WHERE \`id\` = ? AND \`status\` = 'COMPLETED'`,
+             [supplierId, supplierInvoiceNo || null, invoiceDate, subtotal, taxTotal, grandTotal, notes || null, id]
+        );
+    }
+
+    static async deleteItems(purchaseId, conn) {
+        await conn.query("DELETE FROM `purchase_items` WHERE `purchase_id` = ?", [purchaseId]);
+    }
+
+    static async updateStatus(id, status, conn) {
+        const [result] = await conn.query(
+            "UPDATE `purchases` SET `status` = ? WHERE `id` = ? AND `status` = 'COMPLETED'",
+            [status, id]
+        );
+        return result.affectedRows > 0;
     }
 }
 

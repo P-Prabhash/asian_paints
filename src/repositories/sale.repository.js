@@ -136,6 +136,14 @@ class SaleRepository {
         return rows;
     }
 
+    static async updateStatus(id, status, conn) {
+        const [result] = await conn.query(
+            "UPDATE `sales` SET `status` = ? WHERE `id` = ? AND `status` = 'COMPLETED'",
+            [status, id]
+        );
+        return result.affectedRows > 0;
+    }
+
     static async createSale(saleData, conn) {
         const {
             invoiceNo, customerId, categoryFilter, subtotal, discountTotal, taxableTotal,

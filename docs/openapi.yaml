@@ -311,6 +311,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/SaleResponse'
         '404': { description: Invoice not found }
+    delete:
+      summary: Void a sale and reverse unreturned stock while retaining transaction history
+      description: Voids the sale instead of hard-deleting it. Existing payments and return records are retained; payment refunds must be recorded separately. Customer credit reversal is capped at the remaining balance because customer-level collections are not allocated to individual invoices.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          description: Internal numeric sale ID or exact manually assigned invoice number.
+          schema: { type: string, example: PNT-2026-001 }
+      responses:
+        '200':
+          description: Sale voided and stock restored transactionally
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SaleVoidResponse'
+        '404': { description: Sale not found }
+        '409': { description: Sale already voided or stock/history integrity conflict }
 
   /sales/{id}/receipt:
     get:
@@ -526,7 +545,7 @@ paths:
           name: movementType
           schema:
             type: string
-            enum: [INITIAL_STOCK, PURCHASE_RECEIPT, SALE_OUT, SALE_RETURN_IN, MANUAL_ADJUSTMENT]
+            enum: [INITIAL_STOCK, PURCHASE_RECEIPT, PURCHASE_EDIT_IN, PURCHASE_EDIT_OUT, PURCHASE_VOID_OUT, SALE_OUT, SALE_RETURN_IN, SALE_VOID_IN, MANUAL_ADJUSTMENT]
         - in: query
           name: page
           schema: { type: integer, minimum: 1, default: 1 }
@@ -584,6 +603,66 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreatePurchaseResponse'
         '400': { description: Invalid supplier, product, or purchase details }
+  /purchases/{id}:
+    get:
+      summary: View a purchase with persisted line items
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Purchase header, supplier, and item details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePurchaseResponse'
+        '404': { description: Purchase not found }
+    put:
+      summary: Edit a completed purchase and reconcile stock by item quantity difference
+      description: Replaces the purchase header and item list. The stock delta and purchase changes are committed atomically; edits are rejected if reducing quantities would make stock negative.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePurchaseRequest'
+      responses:
+        '200':
+          description: Updated purchase returned with persisted line items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePurchaseResponse'
+        '400': { description: Invalid supplier, product, or purchase details }
+        '404': { description: Purchase not found }
+        '409': { description: Purchase is voided or stock cannot be reduced safely }
+    delete:
+      summary: Void a purchase and reverse received stock while retaining history
+      description: Does not hard-delete accounting history. Voiding fails if the received quantity has already been consumed and removing it would make stock negative.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Purchase voided and stock reversed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PurchaseVoidResponse'
+        '404': { description: Purchase not found }
+        '409': { description: Purchase already voided or stock has been consumed }
 
   /reports/dashboard:
     get:
@@ -876,6 +955,22 @@ components:
           type: object
           properties:
             requestId: { type: string }
+    PurchaseVoidResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: Purchase voided and stock reversed successfully. }
+        data:
+          type: object
+          properties:
+            id: { type: integer, example: 72 }
+            purchaseNo: { type: string, example: PUR-10072 }
+            status: { type: string, enum: [VOID] }
+            stockReversed: { type: boolean, example: true }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
     SalesListResponse:
       type: object
       properties:
@@ -988,6 +1083,26 @@ components:
           type: object
           properties:
             requestId: { type: string }
+    SaleVoidResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        message: { type: string, example: Sale voided and stock reversed successfully. }
+        data:
+          type: object
+          properties:
+            saleId: { type: integer }
+            invoiceNo: { type: string }
+            status: { type: string, enum: [VOID] }
+            stockRestored: { type: boolean, example: true }
+            customerCreditReversed: { type: number, example: 0 }
+            paymentStatus:
+              type: string
+              example: Original payment records retained; refunds must be recorded separately.
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
     StockAdjustmentRequest:
       type: object
       required: [productId, adjustmentType, quantity, reason]
@@ -999,9 +1114,9 @@ components:
           example: 12
         adjustmentType:
           type: string
-          enum: [ADD, REMOVE, SET]
-          description: ADD/REMOVE use a positive delta; SET uses the target on-hand quantity and may be zero.
-          example: ADD
+          enum: [INCREASE, DECREASE, ADD, REMOVE, SET]
+          description: INCREASE is an alias for ADD; DECREASE is an alias for REMOVE. ADD/REMOVE take a positive delta; SET takes the target on-hand quantity and may be zero.
+          example: INCREASE
         quantity:
           oneOf:
             - { type: number, minimum: 0, maximum: 9999999999.99 }
@@ -1021,7 +1136,7 @@ components:
             previousStock: { type: number, example: 10.5 }
             newStock: { type: number, example: 16 }
             lowStock: { type: boolean, example: false }
-            adjustmentType: { type: string, enum: [ADD, REMOVE, SET], example: ADD }
+            adjustmentType: { type: string, enum: [ADD, REMOVE, SET], description: Canonical operation returned by the API; INCREASE and DECREASE requests are normalized to ADD and REMOVE., example: ADD }
             reason: { type: string, example: "Physical stock count correction" }
         meta:
           type: object

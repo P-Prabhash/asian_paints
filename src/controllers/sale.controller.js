@@ -52,9 +52,20 @@ async function createReturn(req, res) {
     });
 }
 
+async function deleteSale(req, res) {
+    const result = await SaleService.deleteSale(req.params.id, req.user.id);
+    res.status(200).json({
+        success: true,
+        message: "Sale voided and stock reversed successfully.",
+        data: result,
+        meta: { requestId: req.requestId }
+    });
+}
+
 module.exports = {
     listSales,
     getSale,
     getSaleReceipt,
-    createReturn
+    createReturn,
+    deleteSale
 };

@@ -34,8 +34,29 @@ async function createPurchase(req, res) {
     });
 }
 
+async function updatePurchase(req, res) {
+    const purchase = await PurchaseService.updatePurchase(parseInt(req.params.id, 10), req.body, req.user.id);
+    res.status(200).json({
+        success: true,
+        data: purchase,
+        meta: { requestId: req.requestId }
+    });
+}
+
+async function deletePurchase(req, res) {
+    const result = await PurchaseService.deletePurchase(parseInt(req.params.id, 10), req.user.id);
+    res.status(200).json({
+        success: true,
+        message: "Purchase voided and stock reversed successfully.",
+        data: result,
+        meta: { requestId: req.requestId }
+    });
+}
+
 module.exports = {
     listPurchases,
     getPurchase,
-    createPurchase
+    createPurchase,
+    updatePurchase,
+    deletePurchase
 };

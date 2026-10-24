@@ -9,6 +9,8 @@ const SettingsRepository = require("../repositories/settings.repository");
 const { getNextSequenceNumber } = require("../utils/invoice-number");
 const { roundToTwoDecimals } = require("../utils/money");
 
+const MAX_STOCK_QUANTITY = 9999999999.99;
+
 class SaleService {
     static async listSales(options) {
         return SaleRepository.listSales(options);
@@ -26,6 +28,120 @@ class SaleService {
             SettingsRepository.getAllSettings()
         ]);
         return { sale, settings };
+    }
+
+    static async deleteSale(identifier, actorId) {
+        return withTransaction(async conn => {
+            const sale = await SaleRepository.findByIdentifier(identifier, conn, true);
+            if (!sale) throw new AppError("Sale ID or invoice number not found", 404, "SALE_NOT_FOUND");
+            if (sale.status !== "COMPLETED") {
+                throw new AppError("Only completed sales can be voided", 409, "SALE_NOT_VOIDABLE");
+            }
+
+            const returnedItems = await SaleRepository.getReturnedQuantitiesBySaleId(sale.id, conn);
+            const returnedByProduct = new Map(returnedItems.map(item => [
+                Number(item.product_id),
+                Number(item.returned_qty)
+            ]));
+            const soldByProduct = new Map();
+            for (const item of sale.items) {
+                const productId = Number(item.product_id);
+                soldByProduct.set(productId, roundToTwoDecimals(
+                    (soldByProduct.get(productId) || 0) + Number(item.qty)
+                ));
+            }
+            for (const [productId, returnedQty] of returnedByProduct) {
+                if (!soldByProduct.has(productId) || returnedQty > soldByProduct.get(productId)) {
+                    throw new AppError("Recorded return quantities do not match the sale items", 409, "SALE_STOCK_INTEGRITY_ERROR");
+                }
+            }
+
+            const productIds = [...soldByProduct.keys()];
+            const products = await ProductRepository.findByIdsForUpdate(productIds, conn);
+            const productMap = new Map(products.map(product => [product.id, product]));
+            for (const [productId, soldQty] of soldByProduct) {
+                const product = productMap.get(productId);
+                if (!product) throw new AppError(`Product ID ${productId} not found`, 409, "SALE_PRODUCT_NOT_FOUND");
+                const returnedQty = returnedByProduct.get(productId) || 0;
+                const quantityToRestore = roundToTwoDecimals(soldQty - returnedQty);
+                if (quantityToRestore < 0) {
+                    throw new AppError("Recorded return quantity exceeds the quantity sold", 409, "SALE_STOCK_INTEGRITY_ERROR");
+                }
+                if (quantityToRestore > 0) {
+                    const newStock = roundToTwoDecimals(Number(product.stock_qty) + quantityToRestore);
+                    if (newStock > MAX_STOCK_QUANTITY) {
+                        throw new AppError(`Stock quantity for product ${productId} exceeds the supported range`, 409, "STOCK_LIMIT_EXCEEDED");
+                    }
+                    await ProductRepository.updateStockQty(productId, newStock, conn);
+                    await StockRepository.addMovement({
+                        productId,
+                        movementType: "SALE_VOID_IN",
+                        qtyIn: quantityToRestore,
+                        qtyOut: 0,
+                        referenceType: "SALE_VOID",
+                        referenceId: sale.invoice_no,
+                        reason: `Voided invoice ${sale.invoice_no}`,
+                        createdBy: actorId
+                    }, conn);
+                }
+            }
+
+            if (!await SaleRepository.updateStatus(sale.id, "VOID", conn)) {
+                throw new AppError("Sale was already voided", 409, "SALE_NOT_VOIDABLE");
+            }
+
+            let customerCreditReversed = 0;
+            if (sale.customer_id && Number(sale.due_total) > 0) {
+                const customer = await CustomerRepository.findByIdForUpdate(sale.customer_id, conn);
+                if (!customer) throw new AppError("Sale customer not found", 409, "SALE_CUSTOMER_NOT_FOUND");
+                const priorReturnCredits = await CustomerRepository.getSaleReturnCredits(sale.id, conn);
+                customerCreditReversed = roundToTwoDecimals(
+                    Math.min(
+                        Math.max(0, Number(sale.due_total) - priorReturnCredits),
+                        Math.max(0, Number(customer.current_balance))
+                    )
+                );
+                if (customerCreditReversed > 0) {
+                    await CustomerRepository.updateBalance(sale.customer_id, -customerCreditReversed, conn);
+                }
+                const updatedCustomer = customerCreditReversed > 0
+                    ? await CustomerRepository.findById(sale.customer_id, conn)
+                    : customer;
+                await CustomerRepository.addLedgerEntry({
+                    customerId: sale.customer_id,
+                    saleId: sale.id,
+                    paymentId: null,
+                    entryType: "SALE_VOID",
+                    debit: 0,
+                    credit: customerCreditReversed,
+                    balanceAfter: updatedCustomer.current_balance,
+                    notes: `Voided invoice ${sale.invoice_no}`
+                }, conn);
+            }
+
+            await AuditRepository.createLog({
+                userId: actorId,
+                action: "SALE_VOIDED",
+                entityType: "SALE",
+                entityId: sale.id,
+                metadata: {
+                    invoiceNo: sale.invoice_no,
+                    grandTotal: Number(sale.grand_total),
+                    paidTotalRetained: Number(sale.paid_total),
+                    dueTotal: Number(sale.due_total),
+                    customerCreditReversed
+                }
+            }, conn);
+
+            return {
+                saleId: sale.id,
+                invoiceNo: sale.invoice_no,
+                status: "VOID",
+                stockRestored: true,
+                customerCreditReversed,
+                paymentStatus: "Original payment records retained; refunds must be recorded separately."
+            };
+        });
     }
 
     static async processReturn(saleIdentifier, returnData, actorId) {
@@ -120,6 +236,9 @@ class SaleService {
                 const lockedProducts = await ProductRepository.findByIdsForUpdate([rItem.productId], conn);
                 if (lockedProducts.length > 0) {
                     const newStock = roundToTwoDecimals(Number(lockedProducts[0].stock_qty) + rItem.qty);
+                    if (newStock > MAX_STOCK_QUANTITY) {
+                        throw new AppError(`Stock quantity for product ${rItem.productId} exceeds the supported range`, 409, "STOCK_LIMIT_EXCEEDED");
+                    }
                     await ProductRepository.updateStockQty(rItem.productId, newStock, conn);
                 }
 
@@ -136,21 +255,27 @@ class SaleService {
             }
 
             if (sale.customer_id && sale.due_total > 0) {
-                const creditAdjustment = Math.min(sale.due_total, totalRefund);
-                await CustomerRepository.updateBalance(sale.customer_id, -creditAdjustment, conn);
+                const priorReturnCredits = await CustomerRepository.getSaleReturnCredits(saleId, conn);
+                const creditAdjustment = roundToTwoDecimals(Math.max(
+                    0,
+                    Math.min(Number(sale.due_total), priorReturnCredits + totalRefund) - priorReturnCredits
+                ));
+                if (creditAdjustment > 0) {
+                    await CustomerRepository.updateBalance(sale.customer_id, -creditAdjustment, conn);
 
-                const updatedCustomer = await CustomerRepository.findById(sale.customer_id, conn);
+                    const updatedCustomer = await CustomerRepository.findById(sale.customer_id, conn);
 
-                await CustomerRepository.addLedgerEntry({
-                    customerId: sale.customer_id,
-                    saleId,
-                    paymentId: null,
-                    entryType: "SALE_RETURN",
-                    debit: 0,
-                    credit: creditAdjustment,
-                    balanceAfter: updatedCustomer.current_balance,
-                    notes: `Sales Return ${returnNo}`
-                }, conn);
+                    await CustomerRepository.addLedgerEntry({
+                        customerId: sale.customer_id,
+                        saleId,
+                        paymentId: null,
+                        entryType: "SALE_RETURN",
+                        debit: 0,
+                        credit: creditAdjustment,
+                        balanceAfter: updatedCustomer.current_balance,
+                        notes: `Sales Return ${returnNo}`
+                    }, conn);
+                }
             }
 
             await AuditRepository.createLog({
