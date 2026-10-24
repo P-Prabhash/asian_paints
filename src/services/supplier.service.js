@@ -14,7 +14,19 @@ class SupplierService {
     }
 
     static async createSupplier(supplierData, actorId) {
-        const newId = await SupplierRepository.createSupplier(supplierData);
+        if (supplierData.supplierCode && await SupplierRepository.findByCode(supplierData.supplierCode)) {
+            throw new AppError("Supplier ID already exists", 409, "SUPPLIER_CODE_EXISTS");
+        }
+
+        let newId;
+        try {
+            newId = await SupplierRepository.createSupplier(supplierData);
+        } catch (error) {
+            if (error.code === "ER_DUP_ENTRY" && supplierData.supplierCode) {
+                throw new AppError("Supplier ID already exists", 409, "SUPPLIER_CODE_EXISTS");
+            }
+            throw error;
+        }
 
         await AuditRepository.createLog({
             userId: actorId,
@@ -31,7 +43,19 @@ class SupplierService {
         const supplier = await SupplierRepository.findById(id);
         if (!supplier) throw new AppError("Supplier not found", 404, "SUPPLIER_NOT_FOUND");
 
-        await SupplierRepository.updateSupplier(id, updates);
+        if (updates.supplierCode && updates.supplierCode !== supplier.supplier_code) {
+            const existing = await SupplierRepository.findByCode(updates.supplierCode);
+            if (existing && existing.id !== id) throw new AppError("Supplier ID already exists", 409, "SUPPLIER_CODE_EXISTS");
+        }
+
+        try {
+            await SupplierRepository.updateSupplier(id, updates);
+        } catch (error) {
+            if (error.code === "ER_DUP_ENTRY" && updates.supplierCode) {
+                throw new AppError("Supplier ID already exists", 409, "SUPPLIER_CODE_EXISTS");
+            }
+            throw error;
+        }
 
         await AuditRepository.createLog({
             userId: actorId,

@@ -6,9 +6,9 @@ class SupplierRepository {
         const params = [];
 
         if (search) {
-            where.push("(`name` LIKE ? OR `mobile` LIKE ? OR `gstin` LIKE ?)");
+            where.push("(`supplier_code` LIKE ? OR `name` LIKE ? OR `mobile` LIKE ? OR `gstin` LIKE ?)");
             const s = `%${search}%`;
-            params.push(s, s, s);
+            params.push(s, s, s, s);
         }
 
         const query = `SELECT * FROM \`suppliers\` WHERE ${where.join(" AND ")} ORDER BY \`id\` DESC LIMIT ? OFFSET ?`;
@@ -25,11 +25,20 @@ class SupplierRepository {
         return rows[0] || null;
     }
 
-    static async createSupplier({ name, mobile, address, gstin, active = true }) {
-        const [result] = await pool.query(
-            `INSERT INTO \`suppliers\` (\`name\`, \`mobile\`, \`address\`, \`gstin\`, \`active\`)
-             VALUES (?, ?, ?, ?, ?)`,
-            [name, mobile || null, address || null, gstin || null, active ? 1 : 0]
+    static async findByCode(supplierCode, conn = pool) {
+        if (!supplierCode) return null;
+        const [rows] = await conn.query(
+            "SELECT * FROM `suppliers` WHERE `supplier_code` = ? LIMIT 1",
+            [supplierCode]
+        );
+        return rows[0] || null;
+    }
+
+    static async createSupplier({ supplierCode, name, mobile, address, gstin, active = true }, conn = pool) {
+        const [result] = await conn.query(
+            `INSERT INTO \`suppliers\` (\`supplier_code\`, \`name\`, \`mobile\`, \`address\`, \`gstin\`, \`active\`)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [supplierCode || null, name, mobile || null, address || null, gstin || null, active ? 1 : 0]
         );
         return result.insertId;
     }
@@ -38,6 +47,7 @@ class SupplierRepository {
         const fields = [];
         const values = [];
 
+        if (updates.supplierCode !== undefined) { fields.push("`supplier_code` = ?"); values.push(updates.supplierCode || null); }
         if (updates.name !== undefined) { fields.push("`name` = ?"); values.push(updates.name); }
         if (updates.mobile !== undefined) { fields.push("`mobile` = ?"); values.push(updates.mobile || null); }
         if (updates.address !== undefined) { fields.push("`address` = ?"); values.push(updates.address || null); }

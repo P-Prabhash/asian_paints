@@ -26,6 +26,33 @@ describe("Purchase request validation", () => {
         });
     });
 
+    test("accepts either existing supplier database ID or complete inline supplier details", () => {
+        const commonPurchase = {
+            invoiceDate: "2026-10-24",
+            items: [{ productId: 12, qty: 1, unitCost: 100 }]
+        };
+        expect(createPurchaseSchema.safeParse({ ...commonPurchase, supplierId: "3" }).success).toBe(true);
+        expect(createPurchaseSchema.safeParse({
+            ...commonPurchase,
+            supplier: {
+                supplierCode: "SUP-ACME-01",
+                name: "Acme Paint Distributors",
+                mobile: "+91-9876543210",
+                address: "12 Market Road"
+            }
+        }).success).toBe(true);
+        expect(createPurchaseSchema.safeParse({
+            ...commonPurchase,
+            supplier: { supplierCode: "bad code", name: "Acme" }
+        }).success).toBe(false);
+        expect(createPurchaseSchema.safeParse({
+            ...commonPurchase,
+            supplierId: 3,
+            supplier: { supplierCode: "SUP-ACME-01", name: "Acme" }
+        }).success).toBe(false);
+        expect(createPurchaseSchema.safeParse(commonPurchase).success).toBe(false);
+    });
+
     test("rejects missing items and invalid quantity or tax rate", () => {
         expect(createPurchaseSchema.safeParse({
             supplierId: 3,

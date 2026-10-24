@@ -213,6 +213,18 @@ class ApiClient {
         return this.adjustStock({ productId, adjustmentType: 'DECREASE', quantity, reason });
     }
 
+    static async getSuppliers(params = {}) {
+        const query = new URLSearchParams(params).toString();
+        return this.request(`/suppliers${query ? '?' + query : ''}`);
+    }
+
+    static async createSupplier(supplierData) {
+        return this.request('/suppliers', {
+            method: 'POST',
+            body: supplierData
+        });
+    }
+
     // Purchases
     static async getPurchases(params = {}) {
         const query = new URLSearchParams(params).toString();
@@ -221,6 +233,13 @@ class ApiClient {
 
     static async getPurchase(purchaseId) {
         return this.request(`/purchases/${purchaseId}`);
+    }
+
+    static async createPurchase(purchaseData) {
+        return this.request('/purchases', {
+            method: 'POST',
+            body: purchaseData
+        });
     }
 
     static async updatePurchase(purchaseId, purchaseData) {

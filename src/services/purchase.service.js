@@ -23,14 +23,14 @@ class PurchaseService {
 
     static async createPurchase(purchaseData, actorId) {
         return withTransaction(async (conn) => {
-            await this.assertActiveSupplier(purchaseData.supplierId, conn);
+            const supplierId = await this.resolveSupplier(purchaseData, actorId, conn);
 
             const purchaseNo = await getNextSequenceNumber(conn, "purchase_next_number", "PUR-");
             const { totals, items } = await this.prepareItems(purchaseData.items, conn);
 
             const purchaseId = await PurchaseRepository.createPurchase({
                 purchaseNo,
-                supplierId: purchaseData.supplierId,
+                supplierId,
                 supplierInvoiceNo: purchaseData.supplierInvoiceNo,
                 invoiceDate: purchaseData.invoiceDate,
                 ...totals,
@@ -45,7 +45,7 @@ class PurchaseService {
                 action: "PURCHASE_CREATED",
                 entityType: "PURCHASE",
                 entityId: purchaseId,
-                metadata: { purchaseNo, supplierId: purchaseData.supplierId, grandTotal: totals.grandTotal }
+                metadata: { purchaseNo, supplierId, grandTotal: totals.grandTotal }
             }, conn);
 
             return PurchaseRepository.findById(purchaseId, conn);
@@ -56,6 +56,40 @@ class PurchaseService {
         const supplier = await SupplierRepository.findById(supplierId, conn);
         if (!supplier) throw new AppError("Supplier not found", 400, "INVALID_SUPPLIER");
         if (!supplier.active) throw new AppError("Inactive supplier cannot receive a purchase", 400, "SUPPLIER_INACTIVE");
+    }
+
+    static async resolveSupplier(purchaseData, actorId, conn) {
+        if (purchaseData.supplierId) {
+            await this.assertActiveSupplier(purchaseData.supplierId, conn);
+            return purchaseData.supplierId;
+        }
+
+        const { supplier } = purchaseData;
+        if (!supplier) {
+            throw new AppError("An existing supplier ID or new supplier details are required", 400, "SUPPLIER_REQUIRED");
+        }
+        if (await SupplierRepository.findByCode(supplier.supplierCode, conn)) {
+            throw new AppError("Supplier ID already exists; use the existing supplierId instead", 409, "SUPPLIER_CODE_EXISTS");
+        }
+
+        let supplierId;
+        try {
+            supplierId = await SupplierRepository.createSupplier(supplier, conn);
+        } catch (error) {
+            if (error.code === "ER_DUP_ENTRY") {
+                throw new AppError("Supplier ID already exists; use the existing supplierId instead", 409, "SUPPLIER_CODE_EXISTS");
+            }
+            throw error;
+        }
+
+        await AuditRepository.createLog({
+            userId: actorId,
+            action: "SUPPLIER_CREATED",
+            entityType: "SUPPLIER",
+            entityId: supplierId,
+            metadata: { supplierCode: supplier.supplierCode, name: supplier.name, source: "PURCHASE" }
+        }, conn);
+        return supplierId;
     }
 
     static async prepareItems(inputItems, conn, includeCurrentStock = true, lockedProducts = null) {
@@ -141,7 +175,7 @@ class PurchaseService {
                 throw new AppError("Only completed purchases can be edited", 409, "PURCHASE_NOT_EDITABLE");
             }
 
-            await this.assertActiveSupplier(purchaseData.supplierId, conn);
+            const supplierId = await this.resolveSupplier(purchaseData, actorId, conn);
             const oldQuantities = this.aggregateQuantities(purchase.items);
             const productIds = [...new Set([
                 ...oldQuantities.keys(),
@@ -154,7 +188,7 @@ class PurchaseService {
 
             await PurchaseRepository.deleteItems(id, conn);
             await PurchaseRepository.updatePurchase(id, {
-                supplierId: purchaseData.supplierId,
+                supplierId,
                 supplierInvoiceNo: purchaseData.supplierInvoiceNo,
                 invoiceDate: purchaseData.invoiceDate,
                 notes: purchaseData.notes,

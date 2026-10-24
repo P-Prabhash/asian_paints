@@ -664,6 +664,87 @@ paths:
         '404': { description: Purchase not found }
         '409': { description: Purchase already voided or stock has been consumed }
 
+  /suppliers:
+    get:
+      summary: List suppliers
+      description: Search by supplier ID/code, name, mobile number, or GSTIN.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: search
+          schema: { type: string }
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 1, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+      responses:
+        '200':
+          description: Suppliers with internal database ID and user-entered supplier ID/code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierListResponse'
+    post:
+      summary: Create supplier
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSupplierRequest'
+      responses:
+        '201':
+          description: Supplier saved with its internal ID and optional user-entered supplier ID/code.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '409': { description: Supplier ID/code already exists }
+
+  /suppliers/{id}:
+    get:
+      summary: Get supplier by internal database ID
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        '200':
+          description: Supplier details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '404': { description: Supplier not found }
+    patch:
+      summary: Update supplier details
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSupplierRequest'
+      responses:
+        '200':
+          description: Updated supplier details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupplierResponse'
+        '404': { description: Supplier not found }
+        '409': { description: Supplier ID/code already exists }
+
   /reports/dashboard:
     get:
       summary: Get store summary KPIs and sales trends
@@ -910,12 +991,22 @@ components:
             requestId: { type: string }
     CreatePurchaseRequest:
       type: object
-      required: [supplierId, invoiceDate, items]
+      required: [invoiceDate, items]
+      anyOf:
+        - required: [supplierId]
+        - required: [supplier]
+      description: Provide either supplierId for an existing supplier or supplier details to create and link a supplier as part of this purchase. supplierId is the internal database ID; supplier.supplierCode is the manually entered supplier ID/code.
       properties:
         supplierId:
           oneOf:
             - { type: integer, minimum: 1 }
             - { type: string, pattern: '^[1-9]\d*$' }
+          description: Existing supplier internal database ID. Do not provide this together with supplier details.
+          example: 3
+        supplier:
+          allOf:
+            - $ref: '#/components/schemas/SupplierDetails'
+          description: Inline new supplier details; saved transactionally and linked to the purchase.
         supplierInvoiceNo: { type: string, nullable: true, maxLength: 100 }
         invoiceDate: { type: string, format: date, example: "2026-10-24" }
         notes: { type: string, nullable: true }
@@ -945,7 +1036,11 @@ components:
             id: { type: integer, example: 72 }
             purchase_no: { type: string, example: PUR-10072 }
             supplier_id: { type: integer }
+            supplier_code: { type: string, nullable: true, example: SUP-ACME-01, description: User-entered supplier ID/code, distinct from supplier_id. }
             supplier_name: { type: string }
+            supplier_mobile: { type: string, nullable: true }
+            supplier_address: { type: string, nullable: true }
+            supplier_gstin: { type: string, nullable: true }
             invoice_date: { type: string, format: date }
             subtotal: { type: string }
             tax_total: { type: string }
@@ -971,6 +1066,85 @@ components:
           type: object
           properties:
             requestId: { type: string }
+    SupplierDetails:
+      type: object
+      required: [supplierCode, name]
+      properties:
+        supplierCode:
+          type: string
+          minLength: 1
+          maxLength: 50
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'
+          description: User-entered unique Supplier ID/code. The database also assigns its own numeric ID for foreign-key relationships.
+          example: SUP-ACME-01
+        name: { type: string, minLength: 2, maxLength: 100, example: Acme Paint Distributors }
+        mobile: { type: string, nullable: true, maxLength: 20, example: "+91-9876543210" }
+        address: { type: string, nullable: true, maxLength: 5000, example: "12 Market Road, Hyderabad" }
+        gstin: { type: string, nullable: true, maxLength: 20 }
+    CreateSupplierRequest:
+      type: object
+      required: [name]
+      properties:
+        supplierCode:
+          type: string
+          nullable: true
+          minLength: 1
+          maxLength: 50
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'
+          description: Optional unique user-entered Supplier ID/code. The database generates a separate numeric ID.
+        name: { type: string, minLength: 2, maxLength: 100 }
+        mobile: { type: string, nullable: true, maxLength: 20 }
+        address: { type: string, nullable: true, maxLength: 5000 }
+        gstin: { type: string, nullable: true, maxLength: 20 }
+        active: { type: boolean, default: true }
+    UpdateSupplierRequest:
+      type: object
+      properties:
+        supplierCode:
+          type: string
+          nullable: true
+          maxLength: 50
+          pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'
+        name: { type: string, minLength: 2, maxLength: 100 }
+        mobile: { type: string, nullable: true, maxLength: 20 }
+        address: { type: string, nullable: true, maxLength: 5000 }
+        gstin: { type: string, nullable: true, maxLength: 20 }
+        active: { type: integer, enum: [0, 1] }
+    SupplierResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: object
+          properties:
+            id: { type: integer, description: Internal database ID used by purchases. }
+            supplier_code: { type: string, nullable: true, example: SUP-ACME-01 }
+            name: { type: string }
+            mobile: { type: string, nullable: true }
+            address: { type: string, nullable: true }
+            gstin: { type: string, nullable: true }
+            active: { type: boolean }
+        meta:
+          type: object
+          properties:
+            requestId: { type: string }
+    SupplierListResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: true }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              supplier_code: { type: string, nullable: true }
+              name: { type: string }
+              mobile: { type: string, nullable: true }
+              address: { type: string, nullable: true }
+              gstin: { type: string, nullable: true }
+        meta:
+          $ref: '#/components/schemas/PaginationMeta'
     SalesListResponse:
       type: object
       properties:

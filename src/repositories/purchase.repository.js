@@ -12,7 +12,9 @@ class PurchaseRepository {
         }
 
         const query = `
-            SELECT p.*, s.\`name\` as supplier_name, u.\`name\` as creator_name
+            SELECT p.*, s.\`supplier_code\`, s.\`name\` as supplier_name,
+                   s.\`mobile\` as supplier_mobile, s.\`address\` as supplier_address,
+                   s.\`gstin\` as supplier_gstin, u.\`name\` as creator_name
             FROM \`purchases\` p
             JOIN \`suppliers\` s ON p.\`supplier_id\` = s.\`id\`
             JOIN \`users\` u ON p.\`created_by\` = u.\`id\`
@@ -36,7 +38,9 @@ class PurchaseRepository {
 
     static async findById(id, conn = pool, lock = false) {
         const query = `
-            SELECT p.*, s.\`name\` as supplier_name, u.\`name\` as creator_name
+            SELECT p.*, s.\`supplier_code\`, s.\`name\` as supplier_name,
+                   s.\`mobile\` as supplier_mobile, s.\`address\` as supplier_address,
+                   s.\`gstin\` as supplier_gstin, u.\`name\` as creator_name
             FROM \`purchases\` p
             JOIN \`suppliers\` s ON p.\`supplier_id\` = s.\`id\`
             JOIN \`users\` u ON p.\`created_by\` = u.\`id\`

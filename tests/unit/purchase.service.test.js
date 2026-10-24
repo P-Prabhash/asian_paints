@@ -8,7 +8,11 @@ const mockPurchaseRepository = {
     updatePurchase: jest.fn(),
     updateStatus: jest.fn()
 };
-const mockSupplierRepository = { findById: jest.fn() };
+const mockSupplierRepository = {
+    findById: jest.fn(),
+    findByCode: jest.fn(),
+    createSupplier: jest.fn()
+};
 const mockProductRepository = {
     findByIdsForUpdate: jest.fn(),
     updateStockQty: jest.fn()
@@ -33,6 +37,8 @@ describe("Purchase creation transaction", () => {
     beforeEach(() => {
         jest.clearAllMocks();
         mockSupplierRepository.findById.mockResolvedValue({ id: 3, active: 1 });
+        mockSupplierRepository.findByCode.mockResolvedValue(null);
+        mockSupplierRepository.createSupplier.mockResolvedValue(8);
         mockGetNextSequenceNumber.mockResolvedValue("PUR-1001");
         mockProductRepository.findByIdsForUpdate.mockResolvedValue([{
             id: 12,
@@ -86,6 +92,53 @@ describe("Purchase creation transaction", () => {
 
         expect(mockProductRepository.updateStockQty).toHaveBeenNthCalledWith(1, 12, 10, mockConnection);
         expect(mockProductRepository.updateStockQty).toHaveBeenNthCalledWith(2, 12, 13, mockConnection);
+    });
+
+    test("creates and links an inline supplier with user-entered ID during purchase creation", async () => {
+        mockSupplierRepository.findById.mockResolvedValue({ id: 8, active: 1 });
+
+        const result = await PurchaseService.createPurchase({
+            supplier: {
+                supplierCode: "SUP-ACME-01",
+                name: "Acme Paint Distributors",
+                mobile: "+91-9876543210",
+                address: "12 Market Road"
+            },
+            invoiceDate: "2026-10-24",
+            items: [{ productId: 12, qty: 1, unitCost: 100 }]
+        }, 7);
+
+        expect(mockSupplierRepository.findByCode).toHaveBeenCalledWith("SUP-ACME-01", mockConnection);
+        expect(mockSupplierRepository.createSupplier).toHaveBeenCalledWith(expect.objectContaining({
+            supplierCode: "SUP-ACME-01",
+            name: "Acme Paint Distributors",
+            mobile: "+91-9876543210",
+            address: "12 Market Road"
+        }), mockConnection);
+        expect(mockPurchaseRepository.createPurchase).toHaveBeenCalledWith(expect.objectContaining({
+            supplierId: 8
+        }), mockConnection);
+        expect(mockAuditRepository.createLog).toHaveBeenCalledWith(expect.objectContaining({
+            action: "SUPPLIER_CREATED",
+            entityId: 8
+        }), mockConnection);
+        expect(result).toBeDefined();
+    });
+
+    test("rejects duplicate user-entered supplier IDs without creating purchase", async () => {
+        mockSupplierRepository.findByCode.mockResolvedValue({ id: 3, supplier_code: "SUP-ACME-01" });
+
+        await expect(PurchaseService.createPurchase({
+            supplier: {
+                supplierCode: "SUP-ACME-01",
+                name: "Acme Paint Distributors"
+            },
+            invoiceDate: "2026-10-24",
+            items: [{ productId: 12, qty: 1, unitCost: 100 }]
+        }, 7)).rejects.toMatchObject({ code: "SUPPLIER_CODE_EXISTS" });
+
+        expect(mockSupplierRepository.createSupplier).not.toHaveBeenCalled();
+        expect(mockPurchaseRepository.createPurchase).not.toHaveBeenCalled();
     });
 
     test("edits purchase items and applies only the stock quantity difference", async () => {
