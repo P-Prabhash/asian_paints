@@ -57,12 +57,6 @@ const productLookupQuerySchema = z.object({
     code: z.string().min(1, "Search code or barcode is required")
 });
 
-const createCategorySchema = z.object({
-    name: z.string().min(2, "Category name is required"),
-    description: z.string().optional().nullable(),
-    active: z.boolean().optional().default(true)
-});
-
 const createUnitSchema = z.object({
     code: z.string().min(1, "Unit code is required"),
     name: z.string().min(1, "Unit name is required"),
@@ -80,7 +74,6 @@ module.exports = {
     createProductSchema,
     updateProductSchema,
     productLookupQuerySchema,
-    createCategorySchema,
     createUnitSchema,
     createGstRateSchema
 };

@@ -20,8 +20,8 @@ class SupplierRepository {
         return { suppliers: rows, total: countRows[0].total };
     }
 
-    static async findById(id) {
-        const [rows] = await pool.query("SELECT * FROM `suppliers` WHERE `id` = ? LIMIT 1", [id]);
+    static async findById(id, conn = pool) {
+        const [rows] = await conn.query("SELECT * FROM `suppliers` WHERE `id` = ? LIMIT 1", [id]);
         return rows[0] || null;
     }
 

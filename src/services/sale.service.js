@@ -15,8 +15,8 @@ class SaleService {
     }
 
     static async getSaleById(id) {
-        const sale = await SaleRepository.findById(id);
-        if (!sale) throw new AppError("Invoice not found", 404, "SALE_NOT_FOUND");
+        const sale = await SaleRepository.findByIdentifier(id);
+        if (!sale) throw new AppError("Sale ID or invoice number not found", 404, "SALE_NOT_FOUND");
         return sale;
     }
 
@@ -28,10 +28,11 @@ class SaleService {
         return { sale, settings };
     }
 
-    static async processReturn(saleId, returnData, actorId) {
+    static async processReturn(saleIdentifier, returnData, actorId) {
         return withTransaction(async (conn) => {
-            const sale = await SaleRepository.findById(saleId, conn, true);
-            if (!sale) throw new AppError("Invoice not found", 404, "SALE_NOT_FOUND");
+            const sale = await SaleRepository.findByIdentifier(saleIdentifier, conn, true);
+            if (!sale) throw new AppError("Sale ID or invoice number not found", 404, "SALE_NOT_FOUND");
+            const saleId = sale.id;
 
             if (sale.status === "VOID") {
                 throw new AppError("Cannot process return on a voided invoice", 400, "INVOICE_VOIDED");

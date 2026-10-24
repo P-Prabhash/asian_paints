@@ -1,9 +1,8 @@
 const AppError = require("../utils/app-error");
-const { withTransaction } = require("../config/database");
+const withTransaction = require("../utils/transaction");
 const CustomerRepository = require("../repositories/customer.repository");
 const PaymentRepository = require("../repositories/payment.repository");
 const AuditRepository = require("../repositories/audit.repository");
-const { getNextSequenceNumber } = require("../utils/invoice-number");
 
 class CustomerService {
     static async listCustomers(options) {
@@ -83,6 +82,35 @@ class CustomerService {
         return this.getCustomerById(id);
     }
 
+    static async deleteCustomer(id, actorId) {
+        return withTransaction(async (conn) => {
+            const customer = await CustomerRepository.findById(id, conn);
+            if (!customer || !customer.active) {
+                throw new AppError("Customer not found", 404, "CUSTOMER_NOT_FOUND");
+            }
+
+            const archived = await CustomerRepository.archiveCustomer(id, conn);
+            if (!archived) {
+                throw new AppError("Customer was already deleted", 404, "CUSTOMER_NOT_FOUND");
+            }
+
+            await AuditRepository.createLog({
+                userId: actorId,
+                action: "CUSTOMER_DELETED",
+                entityType: "CUSTOMER",
+                entityId: id,
+                metadata: { name: customer.name, customerCode: customer.customer_code }
+            }, conn);
+
+            return {
+                id,
+                name: customer.name,
+                customerCode: customer.customer_code,
+                deleted: true
+            };
+        });
+    }
+
     static async getCustomerLedger(customerId, options) {
         const customer = await CustomerRepository.findById(customerId);
         if (!customer) throw new AppError("Customer not found", 404, "CUSTOMER_NOT_FOUND");
@@ -92,13 +120,20 @@ class CustomerService {
     }
 
     static async collectPayment(customerId, collectionData, actorId) {
-        return withTransaction(async (conn) => {
+        const { receiptNo, amount, paymentMethod, referenceNo, notes } = collectionData;
+        if (typeof receiptNo !== "string" || !receiptNo.trim()) {
+            throw new AppError("A manually entered receipt number is required", 400, "RECEIPT_NO_REQUIRED");
+        }
+
+        try {
+            return await withTransaction(async (conn) => {
             const customer = await CustomerRepository.findById(customerId, conn);
             if (!customer) throw new AppError("Customer not found", 404, "CUSTOMER_NOT_FOUND");
+            if (!customer.active) throw new AppError("Inactive customer cannot make a payment collection", 400, "CUSTOMER_INACTIVE");
 
-            const { amount, paymentMethod, referenceNo, notes } = collectionData;
-
-            const receiptNo = await getNextSequenceNumber(conn, "receipt_next_number", "REC-");
+            if (await PaymentRepository.findCollectionReceiptByNo(receiptNo, conn)) {
+                throw new AppError("Receipt number already exists", 409, "RECEIPT_NO_EXISTS");
+            }
 
             const paymentId = await PaymentRepository.createPayment({
                 saleId: null,
@@ -153,7 +188,13 @@ class CustomerService {
                 previousBalance: customer.current_balance,
                 newBalance: updatedCustomer.current_balance
             };
-        });
+            });
+        } catch (error) {
+            if (error.code === "ER_DUP_ENTRY" && await PaymentRepository.findCollectionReceiptByNo(receiptNo)) {
+                throw new AppError("Receipt number already exists", 409, "RECEIPT_NO_EXISTS");
+            }
+            throw error;
+        }
     }
 }
 

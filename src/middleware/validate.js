@@ -18,7 +18,13 @@ function validate(schema, source = "body") {
             return next(new AppError("Request validation failed", 400, "VALIDATION_ERROR", formattedErrors));
         }
 
-        req[source] = result.data;
+        if (source === "query") {
+            req.validatedQuery = result.data;
+        } else if (source === "params") {
+            req.validatedParams = result.data;
+        } else {
+            req[source] = result.data;
+        }
         next();
     };
 }

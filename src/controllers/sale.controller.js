@@ -28,7 +28,7 @@ async function listSales(req, res) {
 }
 
 async function getSale(req, res) {
-    const sale = await SaleService.getSaleById(parseInt(req.params.id, 10));
+    const sale = await SaleService.getSaleById(req.params.id);
     res.status(200).json({
         success: true,
         data: sale,
@@ -37,14 +37,14 @@ async function getSale(req, res) {
 }
 
 async function getSaleReceipt(req, res) {
-    const { sale, settings } = await SaleService.getReceiptData(parseInt(req.params.id, 10));
+    const { sale, settings } = await SaleService.getReceiptData(req.params.id);
     res.status(200)
         .type("html")
         .send(renderThermalReceipt(sale, settings));
 }
 
 async function createReturn(req, res) {
-    const returnResult = await SaleService.processReturn(parseInt(req.params.id, 10), req.body, req.user.id);
+    const returnResult = await SaleService.processReturn(req.params.id, req.body, req.user.id);
     res.status(201).json({
         success: true,
         data: returnResult,

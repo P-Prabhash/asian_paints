@@ -1,5 +1,10 @@
 const { z } = require("zod");
 
+const numericInput = (schema) => z.preprocess(
+    value => typeof value === "string" && value.trim() !== "" ? Number(value) : value,
+    schema
+);
+
 const createSupplierSchema = z.object({
     name: z.string().min(2, "Supplier name is required"),
     mobile: z.string().optional().nullable(),
@@ -11,15 +16,15 @@ const createSupplierSchema = z.object({
 const updateSupplierSchema = createSupplierSchema.partial();
 
 const purchaseItemSchema = z.object({
-    productId: z.number().int().positive("Product ID is required"),
-    qty: z.number().positive("Quantity must be positive"),
-    unitCost: z.number().min(0, "Unit cost cannot be negative"),
-    discount: z.number().min(0).optional().default(0),
-    gstRate: z.number().min(0).optional().default(0)
+    productId: numericInput(z.number().int().positive("Product ID is required")),
+    qty: numericInput(z.number().finite().positive("Quantity must be positive")),
+    unitCost: numericInput(z.number().finite().min(0, "Unit cost cannot be negative")),
+    discount: numericInput(z.number().finite().min(0)).optional().default(0),
+    gstRate: numericInput(z.number().finite().min(0).max(100)).optional().default(0)
 });
 
 const createPurchaseSchema = z.object({
-    supplierId: z.number().int().positive("Supplier ID is required"),
+    supplierId: numericInput(z.number().int().positive("Supplier ID is required")),
     supplierInvoiceNo: z.string().optional().nullable(),
     invoiceDate: z.string().refine(val => !isNaN(Date.parse(val)), "Valid invoice date required"),
     notes: z.string().optional().nullable(),

@@ -180,6 +180,13 @@ class ApiClient {
         return this.request(`/products${query ? '?' + query : ''}`);
     }
 
+    static async createProduct(productData) {
+        return this.request('/products', {
+            method: 'POST',
+            body: productData
+        });
+    }
+
     static async getStockLevels(params = {}) {
         const query = new URLSearchParams(params).toString();
         return this.request(`/stock${query ? '?' + query : ''}`);
@@ -200,6 +207,12 @@ class ApiClient {
 
     static async getCustomerLedger(customerId) {
         return this.request(`/customers/${customerId}/ledger`);
+    }
+
+    static async deleteCustomer(customerId) {
+        return this.request(`/customers/${encodeURIComponent(customerId)}`, {
+            method: 'DELETE'
+        });
     }
 
     static async collectCreditPayment(customerId, collectionPayload) {

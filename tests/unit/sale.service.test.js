@@ -1,7 +1,7 @@
 const mockConnection = {};
 const mockTransaction = jest.fn(callback => callback(mockConnection));
 const mockSaleRepository = {
-    findById: jest.fn(),
+    findByIdentifier: jest.fn(),
     getReturnedQuantitiesBySaleId: jest.fn(),
     createSaleReturn: jest.fn()
 };
@@ -14,7 +14,8 @@ const SaleService = require("../../src/services/sale.service");
 describe("SaleService return safeguards", () => {
     beforeEach(() => {
         jest.clearAllMocks();
-        mockSaleRepository.findById.mockResolvedValue({
+        mockSaleRepository.findByIdentifier.mockResolvedValue({
+            id: 5,
             status: "COMPLETED",
             invoice_no: "INV-001",
             due_total: 0,
@@ -37,12 +38,13 @@ describe("SaleService return safeguards", () => {
             ]
         }, 10)).rejects.toMatchObject({ code: "INVALID_RETURN_QTY" });
 
-        expect(mockSaleRepository.findById).toHaveBeenCalledWith(5, mockConnection, true);
+        expect(mockSaleRepository.findByIdentifier).toHaveBeenCalledWith(5, mockConnection, true);
         expect(mockSaleRepository.createSaleReturn).not.toHaveBeenCalled();
     });
 
     test("rejects quantities already returned on an earlier request", async () => {
-        mockSaleRepository.findById.mockResolvedValue({
+        mockSaleRepository.findByIdentifier.mockResolvedValue({
+            id: 5,
             status: "COMPLETED",
             invoice_no: "INV-001",
             due_total: 0,

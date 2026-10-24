@@ -1,6 +1,14 @@
 const { pool } = require("../config/database");
 
 class PaymentRepository {
+    static async findCollectionReceiptByNo(receiptNo, conn = pool) {
+        const [rows] = await conn.query(
+            "SELECT `id`, `receipt_no` FROM `collection_receipts` WHERE `receipt_no` = ? LIMIT 1",
+            [receiptNo]
+        );
+        return rows[0] || null;
+    }
+
     static async listPayments({ search, startDate, endDate, limit = 50, offset = 0 } = {}) {
         let where = ["1=1"];
         const params = [];

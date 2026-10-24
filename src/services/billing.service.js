@@ -7,7 +7,6 @@ const PaymentRepository = require("../repositories/payment.repository");
 const StockRepository = require("../repositories/stock.repository");
 const AuditRepository = require("../repositories/audit.repository");
 const IdempotencyRepository = require("../repositories/idempotency.repository");
-const { getNextSequenceNumber } = require("../utils/invoice-number");
 const { calculateInvoiceTotals, roundToTwoDecimals } = require("../utils/money");
 const { getSalesCategory, normalizeCategoryFilter, requireSingleCategory } = require("../utils/sales-category");
 
@@ -80,6 +79,10 @@ class BillingService {
 
     static async processCheckout(checkoutData, actorId, idempotencyKey = null) {
         const path = "/api/v1/billing/checkout";
+        const { invoiceNo } = checkoutData;
+        if (typeof invoiceNo !== "string" || !invoiceNo.trim()) {
+            throw new AppError("A manually entered invoice number is required", 400, "INVOICE_NO_REQUIRED");
+        }
 
         if (idempotencyKey) {
             const cached = await IdempotencyRepository.findKey(idempotencyKey, path);
@@ -88,8 +91,13 @@ class BillingService {
             }
         }
 
-        const result = await withTransaction(async (conn) => {
+        try {
+            return await withTransaction(async (conn) => {
             const { categoryFilter = "ALL", isInterState = false, customer: customerInput, items, payments } = checkoutData;
+
+            if (await SaleRepository.findByInvoiceNo(invoiceNo, conn)) {
+                throw new AppError("Invoice number already exists", 409, "INVOICE_NO_EXISTS");
+            }
 
             if (!items || items.length === 0) {
                 throw new AppError("Cart must contain at least one product", 400, "EMPTY_CART");
@@ -183,13 +191,6 @@ class BillingService {
                     customerObj = await CustomerRepository.findById(customerId, conn);
                 }
             }
-
-            const invoiceSequence = salesCategory === "PAINT"
-                ? ["paint_invoice_next_number", "PNT-"]
-                : salesCategory === "SUNNAM"
-                    ? ["sunnam_invoice_next_number", "SUN-"]
-                    : ["invoice_next_number", "INV-"];
-            const invoiceNo = await getNextSequenceNumber(conn, invoiceSequence[0], invoiceSequence[1]);
 
             let paymentStatus = "PAID";
             if (dueTotal > 0 && paidTotal > 0) paymentStatus = "PARTIAL";
@@ -320,9 +321,13 @@ class BillingService {
             }
 
             return responseData;
-        });
-
-        return result;
+            });
+        } catch (error) {
+            if (error.code === "ER_DUP_ENTRY" && await SaleRepository.findByInvoiceNo(invoiceNo)) {
+                throw new AppError("Invoice number already exists", 409, "INVOICE_NO_EXISTS");
+            }
+            throw error;
+        }
     }
 }
 

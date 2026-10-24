@@ -1,17 +1,20 @@
 const BillingService = require("../services/billing.service");
 
 async function listProducts(req, res) {
-    const result = await BillingService.listProducts(req.query);
+    const query = req.validatedQuery || req.query;
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 50;
+    const result = await BillingService.listProducts({ ...query, page, limit });
     res.status(200).json({
         success: true,
         data: result.products,
         meta: {
             requestId: req.requestId,
             pagination: {
-                page: req.query.page,
-                limit: req.query.limit,
+                page,
+                limit,
                 total: result.total,
-                totalPages: Math.ceil(result.total / req.query.limit)
+                totalPages: Math.ceil(result.total / limit)
             }
         }
     });

@@ -51,4 +51,19 @@ describe("API Route Architecture & Uniqueness Tests", () => {
         expect(idIndex).toBeGreaterThan(-1);
         expect(lookupIndex).toBeLessThan(idIndex);
     });
+
+    test("Category management endpoints are not registered", () => {
+        const routes = extractAllRoutes(app);
+
+        expect(routes.some(route => route.path === "/api/v1/categories")).toBe(false);
+        expect(routes.some(route => route.path.startsWith("/api/v1/categories/"))).toBe(false);
+    });
+
+    test("Unit and GST reference data endpoints remain available without category management", () => {
+        const routes = extractAllRoutes(app);
+        const routeKeys = new Set(routes.map(route => `${route.method} ${route.path}`));
+
+        expect(routeKeys.has("GET /api/v1/units")).toBe(true);
+        expect(routeKeys.has("GET /api/v1/gst-rates")).toBe(true);
+    });
 });

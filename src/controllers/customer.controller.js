@@ -43,6 +43,16 @@ async function updateCustomer(req, res) {
     });
 }
 
+async function deleteCustomer(req, res) {
+    const result = await CustomerService.deleteCustomer(parseInt(req.params.id, 10), req.user.id);
+    res.status(200).json({
+        success: true,
+        message: "Customer deleted successfully.",
+        data: result,
+        meta: { requestId: req.requestId }
+    });
+}
+
 async function getCustomerLedger(req, res) {
     const page = Math.max(1, parseInt(req.query.page, 10) || 1);
     const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 50));
@@ -73,6 +83,7 @@ module.exports = {
     getCustomer,
     createCustomer,
     updateCustomer,
+    deleteCustomer,
     getCustomerLedger,
     collectPayment
 };

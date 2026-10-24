@@ -3,14 +3,10 @@ const asyncHandler = require("../utils/async-handler");
 const validate = require("../middleware/validate");
 const authenticate = require("../middleware/authenticate");
 const authorize = require("../middleware/authorize");
-const { createCategorySchema, createUnitSchema, createGstRateSchema } = require("../validators/product.validator");
-const { listCategories, createCategory, listUnits, createUnit, listGstRates, createGstRate } = require("../controllers/category.controller");
+const { createUnitSchema, createGstRateSchema } = require("../validators/product.validator");
+const { listUnits, createUnit, listGstRates, createGstRate } = require("../controllers/reference-data.controller");
 
 const router = express.Router();
-
-// Categories
-router.get("/categories", authenticate, authorize("products:read"), asyncHandler(listCategories));
-router.post("/categories", authenticate, authorize("products:create"), validate(createCategorySchema), asyncHandler(createCategory));
 
 // Units
 router.get("/units", authenticate, authorize("products:read"), asyncHandler(listUnits));

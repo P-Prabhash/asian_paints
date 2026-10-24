@@ -68,6 +68,11 @@ const updateCustomerSchema = createCustomerSchema
     .partial();
 
 const collectPaymentSchema = z.object({
+    receiptNo: z.string()
+        .trim()
+        .min(1, "Receipt number is required")
+        .max(50, "Receipt number must not exceed 50 characters")
+        .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "Receipt number may contain letters, numbers, dots, underscores, slashes, and hyphens"),
     amount: z.number().positive("Collection amount must be greater than zero"),
     paymentMethod: z.enum(["CASH", "UPI", "CARD", "BANK_TRANSFER"]),
     referenceNo: z.string().optional().nullable(),

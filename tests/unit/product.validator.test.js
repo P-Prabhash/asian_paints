@@ -11,6 +11,12 @@ const validProduct = {
 };
 
 describe("Product validation", () => {
+    test("requires a manually entered product name", () => {
+        expect(createProductSchema.parse(validProduct).name).toBe("Premium Interior Paint");
+        const { name, ...withoutName } = validProduct;
+        expect(createProductSchema.safeParse(withoutName).success).toBe(false);
+    });
+
     test("accepts a partial product update with numeric form values", () => {
         expect(updateProductSchema.parse({
             name: "  Updated Paint  ",

@@ -2,7 +2,7 @@ const { pool } = require("../config/database");
 
 class CustomerRepository {
     static async listCustomers({ search, limit = 50, offset = 0 } = {}) {
-        let where = ["1=1"];
+        let where = ["`active` = 1"];
         const params = [];
 
         if (search) {
@@ -61,7 +61,7 @@ class CustomerRepository {
         return result.insertId;
     }
 
-    static async updateCustomer(id, updates) {
+    static async updateCustomer(id, updates, conn = pool) {
         const fields = [];
         const values = [];
 
@@ -90,9 +90,17 @@ class CustomerRepository {
         if (fields.length === 0) return false;
 
         values.push(id);
-        const [result] = await pool.query(
+        const [result] = await conn.query(
             `UPDATE \`customers\` SET ${fields.join(", ")} WHERE \`id\` = ?`,
             values
+        );
+        return result.affectedRows > 0;
+    }
+
+    static async archiveCustomer(id, conn = pool) {
+        const [result] = await conn.query(
+            "UPDATE `customers` SET `active` = 0 WHERE `id` = ? AND `active` = 1",
+            [id]
         );
         return result.affectedRows > 0;
     }

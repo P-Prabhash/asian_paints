@@ -73,8 +73,35 @@ class SaleRepository {
         const [rows] = await conn.query(query, [id]);
         if (rows.length === 0) return null;
 
-        const sale = rows[0];
+        return this.attachSaleDetails(rows[0], conn);
+    }
 
+    static async findByInvoiceNo(invoiceNo, conn = pool, lock = false) {
+        const query = `
+            SELECT s.*, c.\`name\` as customer_name, c.\`mobile\` as customer_mobile, c.\`address\` as customer_address, c.\`gstin\` as customer_gstin, u.\`name\` as creator_name
+            FROM \`sales\` s
+            LEFT JOIN \`customers\` c ON s.\`customer_id\` = c.\`id\`
+            JOIN \`users\` u ON s.\`created_by\` = u.\`id\`
+            WHERE s.\`invoice_no\` = ?
+            LIMIT 1${lock ? " FOR UPDATE" : ""}
+        `;
+        const [rows] = await conn.query(query, [invoiceNo]);
+        if (rows.length === 0) return null;
+
+        return this.attachSaleDetails(rows[0], conn);
+    }
+
+    static async findByIdentifier(identifier, conn = pool, lock = false) {
+        const saleByInvoice = await this.findByInvoiceNo(String(identifier), conn, lock);
+        if (saleByInvoice) return saleByInvoice;
+
+        const value = String(identifier);
+        if (!/^[1-9]\d*$/.test(value) || !Number.isSafeInteger(Number(value))) return null;
+        return this.findById(Number(value), conn, lock);
+    }
+
+    static async attachSaleDetails(sale, conn) {
+        const id = sale.id;
         const itemsQuery = "SELECT * FROM `sale_items` WHERE `sale_id` = ?";
         const [items] = await conn.query(itemsQuery, [id]);
         sale.items = items.map(item => ({

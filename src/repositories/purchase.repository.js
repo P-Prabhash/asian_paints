@@ -34,7 +34,7 @@ class PurchaseRepository {
         return { purchases: rows, total: countRows[0].total };
     }
 
-    static async findById(id) {
+    static async findById(id, conn = pool) {
         const query = `
             SELECT p.*, s.\`name\` as supplier_name, u.\`name\` as creator_name
             FROM \`purchases\` p
@@ -43,7 +43,7 @@ class PurchaseRepository {
             WHERE p.\`id\` = ?
             LIMIT 1
         `;
-        const [rows] = await pool.query(query, [id]);
+        const [rows] = await conn.query(query, [id]);
         if (rows.length === 0) return null;
 
         const purchase = rows[0];
@@ -54,7 +54,7 @@ class PurchaseRepository {
             JOIN \`products\` pr ON pi.\`product_id\` = pr.\`id\`
             WHERE pi.\`purchase_id\` = ?
         `;
-        const [items] = await pool.query(itemsQuery, [id]);
+        const [items] = await conn.query(itemsQuery, [id]);
         purchase.items = items;
 
         return purchase;

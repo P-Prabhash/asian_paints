@@ -137,6 +137,12 @@ class ProductRepository {
     }
 
     static async listProducts({ search, categoryId, categoryFilter, activeOnly = false, limit = 50, offset = 0 } = {}) {
+        const safeLimit = Number.isSafeInteger(Number(limit))
+            ? Math.min(100, Math.max(1, Number(limit)))
+            : 50;
+        const safeOffset = Number.isSafeInteger(Number(offset))
+            ? Math.max(0, Number(offset))
+            : 0;
         let where = ["1=1"];
         const params = [];
 
@@ -181,7 +187,7 @@ class ProductRepository {
             WHERE ${where.join(" AND ")}
         `;
 
-        const [rows] = await pool.query(query, [...params, limit, offset]);
+        const [rows] = await pool.query(query, [...params, safeLimit, safeOffset]);
         const [countRows] = await pool.query(countQuery, params);
 
         return { products: rows, total: countRows[0].total };

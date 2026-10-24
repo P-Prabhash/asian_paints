@@ -30,8 +30,22 @@ const paymentRowSchema = z.object({
     referenceNo: z.string().optional().nullable()
 });
 
+const invoiceNoSchema = z.string()
+    .trim()
+    .min(1, "Invoice number is required")
+    .max(50, "Invoice number must not exceed 50 characters")
+    .regex(/^[A-Za-z0-9][A-Za-z0-9._/-]*$/, "Invoice number may contain letters, numbers, dots, underscores, slashes, and hyphens");
+
+const billingCategorySchema = z.preprocess(value => {
+    if (typeof value !== "string") return value;
+    const category = value.trim().toUpperCase();
+    if (category.includes("PAINT")) return "PAINT";
+    if (category.includes("SUNNAM") || category.includes("LIME")) return "SUNNAM";
+    return category;
+}, z.enum(["ALL", "PAINT", "SUNNAM"]).optional().default("ALL"));
+
 const quoteSchema = z.object({
-    categoryFilter: z.string().trim().min(1).max(50).optional().default("ALL"),
+    categoryFilter: billingCategorySchema,
     isInterState: z.boolean().optional().default(false),
     items: z.array(cartItemSchema).min(1, "Cart must contain at least one product")
 });
@@ -45,7 +59,8 @@ const customerInfoSchema = z.object({
 });
 
 const checkoutSchema = z.object({
-    categoryFilter: z.string().trim().min(1).max(50).optional().default("ALL"),
+    invoiceNo: invoiceNoSchema,
+    categoryFilter: billingCategorySchema,
     isInterState: z.boolean().optional().default(false),
     customer: customerInfoSchema.optional().nullable(),
     items: z.array(cartItemSchema).min(1, "Cart must contain at least one product"),
@@ -67,5 +82,6 @@ module.exports = {
     billingProductsQuerySchema,
     quoteSchema,
     checkoutSchema,
+    invoiceNoSchema,
     saleReturnSchema
 };

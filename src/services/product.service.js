@@ -158,22 +158,6 @@ class ProductService {
         return this.getProductById(id);
     }
 
-    static async listCategories() {
-        return CategoryRepository.listCategories();
-    }
-
-    static async createCategory(categoryData, actorId) {
-        const newId = await CategoryRepository.createCategory(categoryData);
-        await AuditRepository.createLog({
-            userId: actorId,
-            action: "CATEGORY_CREATED",
-            entityType: "CATEGORY",
-            entityId: newId,
-            metadata: categoryData
-        });
-        return CategoryRepository.findById(newId);
-    }
-
     static async listUnits() {
         return UnitRepository.listUnits();
     }

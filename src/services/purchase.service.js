@@ -1,12 +1,12 @@
 const AppError = require("../utils/app-error");
-const { withTransaction } = require("../config/database");
+const withTransaction = require("../utils/transaction");
 const PurchaseRepository = require("../repositories/purchase.repository");
 const SupplierRepository = require("../repositories/supplier.repository");
 const ProductRepository = require("../repositories/product.repository");
 const StockRepository = require("../repositories/stock.repository");
 const AuditRepository = require("../repositories/audit.repository");
 const { getNextSequenceNumber } = require("../utils/invoice-number");
-const { calculateLineItemTax } = require("../utils/money");
+const { calculateLineItemTax, roundToTwoDecimals } = require("../utils/money");
 
 class PurchaseService {
     static async listPurchases(options) {
@@ -21,8 +21,9 @@ class PurchaseService {
 
     static async createPurchase(purchaseData, actorId) {
         return withTransaction(async (conn) => {
-            const supplier = await SupplierRepository.findById(purchaseData.supplierId);
+            const supplier = await SupplierRepository.findById(purchaseData.supplierId, conn);
             if (!supplier) throw new AppError("Supplier not found", 400, "INVALID_SUPPLIER");
+            if (!supplier.active) throw new AppError("Inactive supplier cannot receive a purchase", 400, "SUPPLIER_INACTIVE");
 
             const purchaseNo = await getNextSequenceNumber(conn, "purchase_next_number", "PUR-");
 
@@ -35,6 +36,10 @@ class PurchaseService {
             let grandTotal = 0;
 
             const processedItems = [];
+            const stockByProduct = new Map(products.map(product => [
+                product.id,
+                Number(product.stock_qty)
+            ]));
 
             for (const item of purchaseData.items) {
                 const product = productMap.get(item.productId);
@@ -48,9 +53,9 @@ class PurchaseService {
                     isInterState: false
                 });
 
-                subtotal += calc.taxableValue;
-                taxTotal += calc.totalTax;
-                grandTotal += calc.lineTotal;
+                subtotal = roundToTwoDecimals(subtotal + calc.taxableValue);
+                taxTotal = roundToTwoDecimals(taxTotal + calc.totalTax);
+                grandTotal = roundToTwoDecimals(grandTotal + calc.lineTotal);
 
                 processedItems.push({
                     productId: item.productId,
@@ -60,8 +65,9 @@ class PurchaseService {
                     taxableValue: calc.taxableValue,
                     taxAmount: calc.totalTax,
                     lineTotal: calc.lineTotal,
-                    currentStock: product.stock_qty
+                    newStock: roundToTwoDecimals((stockByProduct.get(product.id) ?? Number(product.stock_qty)) + item.qty)
                 });
+                stockByProduct.set(product.id, processedItems[processedItems.length - 1].newStock);
             }
 
             const purchaseId = await PurchaseRepository.createPurchase({
@@ -88,8 +94,7 @@ class PurchaseService {
                     lineTotal: item.lineTotal
                 }, conn);
 
-                const newStock = Math.round((Number(item.currentStock) + item.qty) * 100) / 100;
-                await ProductRepository.updateStockQty(item.productId, newStock, conn);
+                await ProductRepository.updateStockQty(item.productId, item.newStock, conn);
 
                 await StockRepository.addMovement({
                     productId: item.productId,
@@ -111,7 +116,7 @@ class PurchaseService {
                 metadata: { purchaseNo, supplierId: purchaseData.supplierId, grandTotal }
             }, conn);
 
-            return PurchaseRepository.findById(purchaseId);
+            return PurchaseRepository.findById(purchaseId, conn);
         });
     }
 }

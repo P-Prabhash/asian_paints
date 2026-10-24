@@ -53,4 +53,37 @@ describe("Product repository update", () => {
             7
         ]);
     });
+
+    test("binds numeric pagination values for the Swagger billing catalog query", async () => {
+        pool.query
+            .mockResolvedValueOnce([[{ id: 12, name: "Paint" }], []])
+            .mockResolvedValueOnce([[{ total: 1 }], []]);
+
+        const result = await ProductRepository.listProducts({
+            categoryFilter: "PAINT",
+            activeOnly: true,
+            search: "12",
+            limit: "50",
+            offset: 0
+        });
+
+        expect(pool.query).toHaveBeenNthCalledWith(
+            1,
+            expect.stringContaining("LIMIT ? OFFSET ?"),
+            ["%12%", "%12%", "%12%", "%12%", "%paint%", 50, 0]
+        );
+        expect(result).toEqual({ products: [{ id: 12, name: "Paint" }], total: 1 });
+    });
+
+    test("bounds invalid pagination values before constructing SQL", async () => {
+        pool.query
+            .mockResolvedValueOnce([[], []])
+            .mockResolvedValueOnce([[{ total: 0 }], []]);
+
+        await ProductRepository.listProducts({ limit: "50; DROP TABLE products", offset: "-4" });
+
+        expect(pool.query.mock.calls[0][0]).toContain("LIMIT ? OFFSET ?");
+        expect(pool.query.mock.calls[0][1]).toEqual([50, 0]);
+        expect(pool.query.mock.calls[0][0]).not.toContain("DROP TABLE");
+    });
 });

@@ -1,23 +1,5 @@
 const ProductService = require("../services/product.service");
 
-async function listCategories(req, res) {
-    const categories = await ProductService.listCategories();
-    res.status(200).json({
-        success: true,
-        data: categories,
-        meta: { requestId: req.requestId }
-    });
-}
-
-async function createCategory(req, res) {
-    const category = await ProductService.createCategory(req.body, req.user.id);
-    res.status(201).json({
-        success: true,
-        data: category,
-        meta: { requestId: req.requestId }
-    });
-}
-
 async function listUnits(req, res) {
     const units = await ProductService.listUnits();
     res.status(200).json({
@@ -55,8 +37,6 @@ async function createGstRate(req, res) {
 }
 
 module.exports = {
-    listCategories,
-    createCategory,
     listUnits,
     createUnit,
     listGstRates,
